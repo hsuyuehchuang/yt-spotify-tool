@@ -4,9 +4,11 @@
 
 ``` bash
 python3 yt-to-spotify.py  "<yt_url>" ["<playlist_name>"]   # YouTube 爬歌名 → Spotify 播放清單
-python3 spotify-to-mp3.py "<spotify_url>"              # Spotify 播放清單 → MP3
-python3 yt-to-mp3.py scrape   "<yt_url>"               # YouTube 爬歌名 → 直接下載 MP3
-python3 yt-to-mp3.py download "<yt_url>"               # YouTube 影片/Playlist → 直接下載 MP3
+python3 spotify-to-mp3.py "<spotify_url>"                  # Spotify 播放清單 → MP3
+python3 yt-to-mp3.py scrape   "<yt_url>"                   # YouTube 爬歌名 → 下載 MP3
+python3 yt-to-mp3.py download "<yt_url>"                   # YouTube 影片/Playlist → 下載 MP3
+python3 bandcamp-to-mp3.py                                  # 互動模式，貼網址下載
+python3 bandcamp-to-mp3.py "<url>"                         # Bandcamp 或 YouTube 單曲
 ```
 
 ---
@@ -187,3 +189,50 @@ python yt-to-mp3.py download "https://www.youtube.com/watch?v=xxx&list=PLxxx"
 - 封面（YouTube thumbnail）自動嵌入 MP3
 - 音質：`bestaudio/best` + MP3 VBR 最高品質
 - 每支影片之間隨機等待 1.5–4 秒
+
+---
+
+## bandcamp-to-mp3.py
+
+快速下載 MP3，支援 **Bandcamp** 與 **YouTube 單曲**，自動嵌入封面與 ID3 metadata。
+- Bandcamp 部分只下載平台允許播放的內容（免費下載 / 可串流預覽），不繞過付費機制
+- YouTube 不支援 playlist（要下整個 playlist 請用 `yt-to-mp3.py`）
+
+### 三種用法
+
+```bash
+# 1. 互動模式（最方便）：貼一個下載一個，空白 Enter 或 Ctrl+C 結束
+python3 bandcamp-to-mp3.py
+>>> https://artist.bandcamp.com/album/xxx
+>>> https://www.youtube.com/watch?v=yyy
+>>> [Enter]
+
+# 2. 一次給多個 URL
+python3 bandcamp-to-mp3.py "url1" "url2" "url3"
+
+# 3. 單個 URL
+python3 bandcamp-to-mp3.py "https://www.youtube.com/watch?v=xxx"
+```
+
+支援的 URL 類型：
+- Bandcamp 單曲：`https://artist.bandcamp.com/track/song-name`
+- Bandcamp 專輯：`https://artist.bandcamp.com/album/album-name`
+- Bandcamp 藝術家頁面：`https://artist.bandcamp.com/music`
+- YouTube 單一影片：`https://www.youtube.com/watch?v=xxx`
+
+### 推薦：設 alias 更方便
+
+在 `~/.bashrc` 加一行：
+
+```bash
+alias bc='cd ~/Desktop/vscode/github/yt-spotify-tool && python3 bandcamp-to-mp3.py'
+```
+
+之後輸入 `bc` 就直接進互動模式。
+
+**注意：**
+- 下載資料夾固定為 `YYYY-MM-DD_QuickDownload`，Bandcamp 和 YouTube 都進同個資料夾
+- 檔名格式：`歌名 - Artist.mp3`
+- 已存在的 MP3 自動跳過
+- YouTube 帶 `list=` 或 `/playlist` 的 URL 會被擋下，要求改用 `yt-to-mp3.py`
+- 每首歌之間隨機等待 1.5–4 秒
