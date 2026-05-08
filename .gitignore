@@ -1,0 +1,21 @@
+# Downloaded MP3 folders（自動產生：YYYY-MM-DD_xxx）
+[0-9][0-9][0-9][0-9]-*/
+
+# Spotify OAuth token（敏感！絕對不要上傳）
+.cache
+
+# YouTube 爬蟲 cache（可重新產生）
+.yt-music-cache/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS / Editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
