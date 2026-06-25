@@ -19,17 +19,20 @@ SLIDE_MIN, SLIDE_MAX = 5.0, 10.0  # 未命中平移距離
 MAX_MISS = 3            # 連續未命中幾次就判定無歌、改快進跳過
 
 # --- shazamio 容錯參數 ---
-RETRY_ATTEMPTS = 3      # 單一窗口的重試次數
-RETRY_BASE_DELAY = 1.0  # 指數退避基底：1, 2, 4 秒
-BLOCK_THRESHOLD = 3     # 連續幾個窗口「重試全敗」就判定被封鎖、優雅停止
+REQUEST_DELAY_MIN = 1.0  # 每次 Shazam 請求間的禮貌間隔（避免連發誘發限流）
+REQUEST_DELAY_MAX = 2.5
+RETRY_ATTEMPTS = 3       # 單一窗口的重試次數
+RETRY_BASE_DELAY = 2.0   # 指數退避基底：2, 4, 8 秒（給限流足夠冷卻時間）
+BLOCK_THRESHOLD = 4      # 連續幾個窗口「重試全敗」才放棄、優雅停止
 
 
 class RecognitionBlocked(Exception):
-    """連續辨識失敗，疑似被 Shazam 限流/封鎖。partial 帶當前影片已找到的歌。"""
+    """連續辨識失敗（疑似限流或網路問題）。partial 帶當前影片已找到的歌，reason 帶真實錯誤。"""
 
-    def __init__(self, partial=None):
-        super().__init__("recognition blocked / rate-limited")
+    def __init__(self, partial=None, reason=""):
+        super().__init__(reason or "recognition repeatedly failed")
         self.partial = partial or []
+        self.reason = reason
 
 
 async def scan_track(duration, slice_fn, recognize_fn, *, rng=None, on_window=None):
@@ -54,9 +57,9 @@ async def scan_track(duration, slice_fn, recognize_fn, *, rng=None, on_window=No
         chunk = slice_fn(pos, WINDOW)
         try:
             track = await recognize_fn(chunk)
-        except RecognitionBlocked:
+        except RecognitionBlocked as e:
             # 把目前進度塞進例外交給上層；半截影片不快取（重跑會重做這支）
-            raise RecognitionBlocked(found)
+            raise RecognitionBlocked(partial=found, reason=e.reason)
 
         if on_window is not None:
             on_window(pos, track)
@@ -90,10 +93,13 @@ class ShazamRecognizer:
     """
 
     def __init__(self, attempts=RETRY_ATTEMPTS, base_delay=RETRY_BASE_DELAY,
-                 block_after=BLOCK_THRESHOLD):
+                 block_after=BLOCK_THRESHOLD,
+                 delay_min=REQUEST_DELAY_MIN, delay_max=REQUEST_DELAY_MAX):
         self.attempts = attempts
         self.base_delay = base_delay
         self.block_after = block_after
+        self.delay_min = delay_min
+        self.delay_max = delay_max
         self._shazam = None
         self._consecutive_fail = 0
 
@@ -131,21 +137,27 @@ class ShazamRecognizer:
         }
 
     async def recognize(self, data: bytes) -> dict | None:
-        """單一窗口辨識。成功（不論有無命中）回 dict|None；疑似被封丟 RecognitionBlocked。"""
+        """單一窗口辨識。成功（不論有無命中）回 dict|None；連續失敗丟 RecognitionBlocked。"""
+        # 禮貌間隔：每次請求前小睡，避免連發誘發 Shazam 限流
+        await asyncio.sleep(random.uniform(self.delay_min, self.delay_max))
+
+        last_err = ""
         for attempt in range(self.attempts):
             try:
                 out = await self._call(data)
-            except Exception:
+            except Exception as e:
+                last_err = f"{type(e).__name__}: {e}"
                 await asyncio.sleep(self.base_delay * (2 ** attempt))
                 continue
             else:
                 self._consecutive_fail = 0   # 只要 HTTP 成功就重置
                 return self._parse(out)
 
-        # 這個窗口重試全敗（多半是網路/限流）
+        # 這個窗口重試全敗（多半是網路/限流）—— 把真實錯誤印出來，不要藏
         self._consecutive_fail += 1
+        print(f"  [警告] 辨識失敗 ({self._consecutive_fail}/{self.block_after}): {last_err}", flush=True)
         if self._consecutive_fail >= self.block_after:
-            raise RecognitionBlocked()
+            raise RecognitionBlocked(reason=last_err)
         return None  # 當作未命中，讓狀態機繼續平移
 
 

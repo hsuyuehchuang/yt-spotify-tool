@@ -59,8 +59,9 @@ async def _scan_videos(videos, tmpdir, refresh):
 
             found = await scan_track(duration, slice_fn, rec.recognize)
         except RecognitionBlocked as e:
-            print(f"  [封鎖] 疑似被 Shazam 限流，優雅停止（本片暫得 {len(e.partial)} 首，不快取）",
-                  flush=True)
+            print(f"  [中止] 辨識連續失敗，停止本次（本片暫得 {len(e.partial)} 首，不快取）", flush=True)
+            if e.reason:
+                print(f"         真實錯誤: {e.reason}（疑似限流或網路問題，稍等幾分鐘再重跑）", flush=True)
             all_found.extend(e.partial)
             _safe_unlink(path)
             return all_found, True
@@ -179,7 +180,7 @@ async def main():
 
     songs = _dedup(all_found)
     print(f"\n{'=' * 50}")
-    print(f"辨識結果（去重後共 {len(songs)} 首）{'  [因限流提早停止]' if blocked else ''}")
+    print(f"辨識結果（去重後共 {len(songs)} 首）{'  [因連續失敗提早停止]' if blocked else ''}")
     print(f"{'=' * 50}")
     for i, s in enumerate(songs, 1):
         print(f"{i}. {s['song']} - {s['artist']}")
