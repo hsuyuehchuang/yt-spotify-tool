@@ -1,12 +1,14 @@
 """
-download-from-spotlist.py
+spotify-to-mp3.py
 給一個 Spotify 播放清單 URL，自動搜尋 YouTube 並下載為 MP3，並寫入完整 ID3 Tags。
 
 用法:
-    python download-from-spotlist.py <spotify_playlist_url> [輸出資料夾]
+    python spotify-to-mp3.py                                   # 互動模式，貼一個下一個
+    python spotify-to-mp3.py <spotify_playlist_url> [輸出資料夾]
 
 範例:
-    python download-from-spotlist.py "https://open.spotify.com/playlist/xxx" ./music
+    python spotify-to-mp3.py "https://open.spotify.com/playlist/xxx"
+    python spotify-to-mp3.py "https://open.spotify.com/playlist/xxx" ./music
 """
 
 import sys
@@ -21,7 +23,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, TIT2, TPE1, TALB, APIC, ID3NoHeaderError
-from utils import word_overlap, title_matches, artist_matches
+from utils import word_overlap, title_matches, artist_matches, print_summary
 
 SPOTIFY_CLIENT_ID = "9e989e6f2e034ca695d116607ec0cca6"
 SPOTIFY_CLIENT_SECRET = "35a77882d91343a7a45fb507e1bd82fc"
@@ -164,26 +166,23 @@ def write_id3_tags(mp3_path: str, track: dict):
     audio.save()
 
 
-def main():
-    playlist_url = sys.argv[1] if len(sys.argv) > 1 else None
-
-    if not playlist_url:
-        print("用法: python download-from-spotlist.py <spotify_playlist_url>")
-        sys.exit(1)
-
+def download_playlist(playlist_url: str, output_base: str | None = None):
     print("=== 讀取 Spotify 播放清單 ===")
     playlist_name, tracks = get_spotify_tracks(playlist_url)
 
-    today = datetime.date.today().strftime("%Y-%m-%d")
-    safe_playlist_name = "".join(c if c not in r'\/:*?"<>|' else "_" for c in playlist_name)
-    output_dir = f"./{today}_{safe_playlist_name}"
+    if output_base:
+        output_dir = output_base
+    else:
+        today = datetime.date.today().strftime("%Y-%m-%d")
+        safe_playlist_name = "".join(c if c not in r'\/:*?"<>|' else "_" for c in playlist_name)
+        output_dir = f"./{today}_{safe_playlist_name}"
     os.makedirs(output_dir, exist_ok=True)
 
     print(f"播放清單: {playlist_name}")
     print(f"下載資料夾: {output_dir}")
     print(f"共 {len(tracks)} 首歌\n")
 
-    failed = []
+    success, skipped, failed = [], [], []
 
     for i, track in enumerate(tracks, 1):
         label = f"{track['name']} - {track['artist']}"
@@ -195,6 +194,7 @@ def main():
         existing = glob.glob(os.path.join(output_dir, safe_name + "*.mp3"))
         if existing:
             print("    [已存在，跳過]")
+            skipped.append(label)
             continue
 
         video_id = search_youtube(track["name"], track["artist"], track["duration_ms"])
@@ -220,17 +220,33 @@ def main():
 
         write_id3_tags(actual_mp3, track)
         print(f"    [完成] {actual_mp3}")
+        success.append(label)
 
         # 隨機延遲，避免觸發限流
-        delay = random.uniform(DELAY_MIN, DELAY_MAX)
-        time.sleep(delay)
+        time.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
 
-    print(f"\n=== 完成 ===")
-    print(f"成功: {len(tracks) - len(failed)} 首")
-    if failed:
-        print(f"失敗: {len(failed)} 首")
-        for f in failed:
-            print(f"  - {f}")
+    print_summary(success, skipped, failed)
+
+
+def main():
+    args = sys.argv[1:]
+    if args:
+        # 直接給 URL（可選第二個參數指定輸出資料夾）
+        download_playlist(args[0], args[1] if len(args) > 1 else None)
+    else:
+        # 沒給參數 → 互動模式，貼一個下一個（沿用 bandcamp-to-mp3.py 體驗）
+        print("互動模式：貼上 Spotify 播放清單 URL 後 Enter（空白 Enter 或 Ctrl+C 結束）\n")
+        try:
+            while True:
+                url = input(">>> ").strip()
+                if not url:
+                    break
+                download_playlist(url)
+                print()
+        except (KeyboardInterrupt, EOFError):
+            print()
+
+    os._exit(0)
 
 
 if __name__ == "__main__":

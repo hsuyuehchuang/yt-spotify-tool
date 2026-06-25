@@ -30,3 +30,12 @@ def title_matches(query_name: str, result_name: str, threshold: float = 0.8) -> 
 def artist_matches(query_artists: list[str], result_artist: str, threshold: float = 0.7) -> bool:
     """query_artists 裡任一個與 result_artist 的 overlap 達標就算符合"""
     return any(word_overlap(a, result_artist) >= threshold for a in query_artists)
+
+
+def print_summary(success, skipped, failed, header: str = "完成"):
+    """各下載 script 共用的結尾統計（對齊 bandcamp 的 成功/已存在/失敗 措辭）。"""
+    print(f"\n{'=' * 50}")
+    print(f"{header}：成功 {len(success)} | 已存在 {len(skipped)} | 失敗 {len(failed)}")
+    if failed:
+        for f in failed:
+            print(f"  - 失敗: {f}")

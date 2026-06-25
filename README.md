@@ -11,8 +11,9 @@ python3 yt-to-mp3.py scrape       # YouTube 爬歌名 → 下載 MP3
 python3 yt-to-mp3.py download     # YouTube 影片/Playlist → 下載 MP3
 ```
 
-互動模式（`shazam_pipeline` / `bandcamp`）直接跑就會跳提示貼網址，**不用引號、不用跳脫**。
-其餘 script 把網址當參數傳；網址含 `&` 時記得用引號包住（見各節範例）。
+`shazam_pipeline` / `bandcamp` / `yt-to-mp3` / `spotify-to-mp3` 直接跑（不帶參數）就會進**互動模式**，
+跳提示貼網址，**不用引號、不用跳脫**。把網址當參數傳時，含 `&` 的網址記得用引號包住（見各節範例）。
+（`yt-to-spotify` 仍只吃參數。）
 
 > `shazam_pipeline.py` 與 `yt-to-spotify.py` 差異：後者只能抓 YouTube **自帶的音樂卡片**（DJ mix /
 > 合輯這類未標記長影片沒有卡片，會抓不到）；前者直接對音軌做 Shazam 聲紋辨識，專治未標記長影片。
@@ -149,7 +150,9 @@ python yt-to-spotify.py "https://www.youtube.com/playlist?list=PLxxx" "Weekender
 從 Spotify 播放清單讀取歌曲，搜尋 YouTube 下載為 MP3，並寫入封面、歌手、專輯等 ID3 Tags。
 
 ```bash
-python spotify-to-mp3.py "<spotify_playlist_url>"
+python spotify-to-mp3.py                                   # 互動模式，貼一個下一個（免引號）
+python spotify-to-mp3.py "<spotify_playlist_url>"          # 直接給網址
+python spotify-to-mp3.py "<spotify_playlist_url>" ./music  # 指定輸出資料夾
 ```
 
 ```bash
@@ -170,14 +173,14 @@ python spotify-to-mp3.py "https://open.spotify.com/playlist/2b1UMpzBx73UmYn4D8Xc
     [找不到 YouTube 對應歌曲]
 ...
 
-=== 完成 ===
-成功: 18 首
-失敗: 3 首
-  - It'z a Rap - Phat Kat
+==================================================
+完成：成功 18 | 已存在 0 | 失敗 3
+  - 失敗: It'z a Rap - Phat Kat
 ```
 
 **注意：**
-- 下載資料夾自動命名：`YYYY-MM-DD_播放清單名稱`
+- 不帶參數 → 互動模式（貼一個下一個，免引號）
+- 下載資料夾預設 `YYYY-MM-DD_播放清單名稱`；可用第二個參數指定資料夾
 - 檔名格式：`歌名 - Artist.mp3`
 - 搜尋優先 YouTube Music Topic 頻道，找不到才做一般搜尋，兩輪都要過 title + artist + 時長比對
 - 已存在的 MP3 自動跳過，重跑安全
@@ -188,7 +191,11 @@ python spotify-to-mp3.py "https://open.spotify.com/playlist/2b1UMpzBx73UmYn4D8Xc
 
 ## yt-to-mp3.py
 
-兩種模式。
+兩種模式（scrape / download）。**不帶參數直接跑會進互動模式**：先問要哪個模式，再貼網址（免引號，貼一個跑一個）。
+
+```bash
+python yt-to-mp3.py            # 互動模式（先選模式再貼網址）
+```
 
 ### scrape 模式
 
@@ -256,13 +263,14 @@ python yt-to-mp3.py download "https://www.youtube.com/watch?v=xxx&list=PLxxx"
 ...
 
 ==================================================
-成功: 18 首  已存在: 2 首
+完成：成功 18 | 已存在 2 | 失敗 0
 ```
 
 **注意（scrape / download 共用）：**
+- 不帶參數 → 互動模式（先選模式，再貼一個跑一個）
 - 下載資料夾自動命名：`YYYY-MM-DD_Playlist名稱` 或 `YYYY-MM-DD_影片標題`
 - 已存在的 MP3 自動跳過，重跑安全
-- 封面（YouTube thumbnail）自動嵌入 MP3
+- 封面（YouTube thumbnail）自動嵌入 MP3，並寫入 artist / album / title 等 metadata
 - 音質：`bestaudio/best` + MP3 VBR 最高品質
 - 每支影片之間隨機等待 1.5–4 秒
 

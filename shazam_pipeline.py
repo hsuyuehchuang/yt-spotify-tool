@@ -98,28 +98,40 @@ def _dedup(all_found):
     return songs
 
 
+_STATUS_LABEL = {
+    "spotify": "已加入",
+    "spotify_via_ytmusic": "已加入(經 YT Music)",
+    "spotify_via_soundcloud": "已加入(經 SoundCloud)",
+    "not_found": "Spotify 無",
+}
+
+
 def _waterfall_resolve(sp, songs):
-    """逐首跑瀑布流，回傳 (uris 去重保序, not_found 報告)。"""
+    """逐首跑瀑布流，回傳每首的完整結果 dict 清單（含 status/uri/exists_on）。"""
     wf = Waterfall(sp)
-    uris = []
-    not_found = []
-    label = {
-        "spotify": "找到",
-        "spotify_via_ytmusic": "找到(經 YT Music)",
-        "spotify_via_soundcloud": "找到(經 SoundCloud)",
-    }
+    results = []
     print("\n瀑布流搜尋中（Spotify -> YT Music -> SoundCloud）...", flush=True)
     for s in songs:
         res = wf.search(s["song"], s["artist"])
+        results.append(res)
         if res["uri"]:
-            if res["uri"] not in uris:
-                uris.append(res["uri"])
-            print(f"  [{label[res['status']]}] {s['song']} - {s['artist']}", flush=True)
+            print(f"  [{_STATUS_LABEL[res['status']]}] {s['song']} - {s['artist']}", flush=True)
         else:
-            not_found.append(res)
             extra = f"（其他平台有: {', '.join(res['exists_on'])}）" if res["exists_on"] else ""
             print(f"  [找不到] {s['song']} - {s['artist']} {extra}", flush=True)
-    return uris, not_found
+    return results
+
+
+def _print_final_list(results):
+    """結尾完整印出所有辨識到的歌 + 各自的歸戶狀態。"""
+    print(f"\n{'=' * 50}")
+    print(f"全部辨識到的歌（共 {len(results)} 首）")
+    print(f"{'=' * 50}")
+    for i, r in enumerate(results, 1):
+        tag = _STATUS_LABEL[r["status"]]
+        if r["status"] == "not_found" and r["exists_on"]:
+            tag += f"，其他平台有: {', '.join(r['exists_on'])}"
+        print(f"{i:>3}. {r['song']} - {r['artist']}  [{tag}]")
 
 
 def _write_playlist(sp, playlist_name, uris):
@@ -182,7 +194,13 @@ async def main():
 
     # 瀑布流需要 Spotify 搜尋（唯讀），故需登入（token 存 .cache）
     sp = spotify_client.get_client()
-    uris, not_found = _waterfall_resolve(sp, songs)
+    results = _waterfall_resolve(sp, songs)
+
+    uris = []
+    for r in results:
+        if r["uri"] and r["uri"] not in uris:
+            uris.append(r["uri"])
+    not_found = [r for r in results if not r["uri"]]
 
     playlist_name = name_arg or playlist_title
     print(f"\n{'=' * 50}")
@@ -190,13 +208,11 @@ async def main():
     print(f"{'=' * 50}")
     _write_playlist(sp, playlist_name, uris)
 
+    # 結尾：完整列出所有辨識到的歌 + 狀態
+    _print_final_list(results)
+
     print(f"\n=== 完成 ===")
-    print(f"加入清單: {len(uris)} 首")
-    if not_found:
-        print(f"Spotify 找不到: {len(not_found)} 首")
-        for r in not_found:
-            extra = f"（其他平台有: {', '.join(r['exists_on'])}）" if r["exists_on"] else ""
-            print(f"  - {r['song']} - {r['artist']} {extra}")
+    print(f"加入清單: {len(uris)} 首 / Spotify 找不到: {len(not_found)} 首")
 
 
 if __name__ == "__main__":

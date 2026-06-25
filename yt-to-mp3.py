@@ -23,7 +23,7 @@ import urllib.request
 import urllib.parse
 import json
 import yt_dlp
-from utils import title_matches, artist_matches
+from utils import title_matches, artist_matches, print_summary
 
 DELAY_MIN = 1.5
 DELAY_MAX = 4.0
@@ -50,6 +50,9 @@ def download_as_mp3(video_url: str, output_path: str) -> bool:
             },
             {
                 "key": "EmbedThumbnail",
+            },
+            {
+                "key": "FFmpegMetadata",  # 寫入 artist / album / title 等 metadata
             },
         ],
     }
@@ -296,6 +299,7 @@ def mode_download(yt_url: str):
         "postprocessors": [
             {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "0"},
             {"key": "EmbedThumbnail"},
+            {"key": "FFmpegMetadata"},  # 寫入 artist / album / title 等 metadata
         ],
     }
 
@@ -328,12 +332,7 @@ def mode_download(yt_url: str):
 
         time.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
 
-    print(f"\n{'=' * 50}")
-    print(f"成功: {len(success)} 首  已存在: {len(skipped)} 首")
-    if failed:
-        print(f"失敗: {len(failed)} 首")
-        for f in failed:
-            print(f"  - {f}")
+    print_summary(success, skipped, failed)
 
 
 # ──────────────────────────────────────────────
@@ -342,26 +341,62 @@ def mode_download(yt_url: str):
 
 def print_usage():
     print("用法:")
+    print("  python yt-to-mp3.py                              # 互動模式（先選模式再貼網址）")
     print("  python yt-to-mp3.py scrape   <yt_playlist_url>")
     print("  python yt-to-mp3.py download <yt_playlist_or_video_url>")
 
 
-if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print_usage()
-        sys.exit(1)
-
-    mode = sys.argv[1].lower()
-    url = sys.argv[2]
-
+def run_mode(mode: str, url: str) -> bool:
+    """執行單一 URL，回傳 mode 是否有效。"""
     if mode == "scrape":
         mode_scrape(url)
-    elif mode == "download":
+        return True
+    if mode == "download":
         mode_download(url)
+        return True
+    print(f"未知模式: {mode}")
+    return False
+
+
+def ask_mode() -> str | None:
+    print("選擇模式：")
+    print("  1) download — 直接把影片 / playlist 下載成 MP3")
+    print("  2) scrape   — 爬影片音樂區塊再下載")
+    choice = input("輸入 1 或 2（直接 Enter = 1 download）: ").strip()
+    if choice in ("", "1", "download"):
+        return "download"
+    if choice in ("2", "scrape"):
+        return "scrape"
+    print("無效選擇。")
+    return None
+
+
+def interactive_loop(mode: str):
+    """貼一個跑一個（沿用 bandcamp-to-mp3.py 互動體驗），空白 Enter / Ctrl+C 結束。"""
+    print(f"\n互動模式（{mode}）：貼上 YouTube 網址後 Enter（空白 Enter 或 Ctrl+C 結束）\n")
+    try:
+        while True:
+            url = input(">>> ").strip()
+            if not url:
+                break
+            run_mode(mode, url)
+            print()
+    except (KeyboardInterrupt, EOFError):
+        print()
+
+
+if __name__ == "__main__":
+    args = sys.argv[1:]
+    if len(args) >= 2:
+        if not run_mode(args[0].lower(), args[1]):
+            print_usage()
+            sys.exit(1)
+    elif len(args) == 1 and args[0].lower() in ("scrape", "download"):
+        interactive_loop(args[0].lower())   # 給了模式沒給網址 → 該模式進互動
     else:
-        print(f"未知模式: {mode}")
-        print_usage()
-        sys.exit(1)
+        mode = ask_mode()
+        if mode:
+            interactive_loop(mode)
 
     # yt-dlp 內部 thread pool 不會自動清除，強制退出避免掛住
     os._exit(0)
