@@ -6,6 +6,26 @@
 
 import os
 
+
+def _load_dotenv(path=".env"):
+    """把專案根目錄的 .env 載進環境變數（已存在的環境變數優先，不覆蓋）。
+
+    讓 ACRCloud 金鑰可以放在一個 .env 檔（git 忽略），clone 到別台機器複製過去即可，
+    不必每台 export。沒有 .env 就什麼都不做（退回純環境變數）。
+    """
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            os.environ.setdefault(key.strip(), val.strip())
+
+
+_load_dotenv()
+
 # --- Spotify ---
 # 沿用既有 script 的值。前往 https://developer.spotify.com/dashboard 建立 App，
 # Redirect URI 填 http://127.0.0.1:8888/callback，API 選 Web API。

@@ -4,6 +4,9 @@
 # Spotify OAuth token（敏感！絕對不要上傳）
 .cache
 
+# 環境變數金鑰（ACRCloud 等，敏感！絕對不要上傳；範本是 .env.example）
+.env
+
 # YouTube 爬蟲 cache（可重新產生）
 .yt-music-cache/
 

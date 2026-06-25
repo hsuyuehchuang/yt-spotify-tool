@@ -26,12 +26,27 @@ YouTube 會問一句要下載還是辨識）。底層用 subprocess 呼叫既有
 
 ## 環境需求
 
+一鍵設定（clone 到新機器後）：
+
 ```bash
-pip install -r requirements.txt    # 或手動：pip install yt-dlp spotipy mutagen requests shazamio ytmusicapi
-sudo apt-get install ffmpeg
+make install                 # 建 .venv + 裝依賴 + 建 .env
+sudo apt-get install ffmpeg  # 系統層，需另外裝
 ```
 
-Spotify API：前往 [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) 建立 App，Redirect URI 填 `http://127.0.0.1:8888/callback`，API 選 Web API。Client ID / Secret 集中在 `config.py`。
+（不想用 make 也行：`python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`）
+
+**clone 到別台機器會發生什麼**（git 只帶程式碼，不帶環境）：
+
+| 東西 | 跟 git 走 | 新機器要做 |
+|---|---|---|
+| 程式碼 / Spotify 金鑰（`config.py`） | 會 | - |
+| 套件（shazamio 等，在 `.venv`） | 不會 | `make install` |
+| ffmpeg（系統層） | 不會 | `apt install ffmpeg` |
+| ACRCloud 金鑰 | 不會 | 填 `.env`（範本 `.env.example`） |
+| Spotify 登入 token（`.cache`） | 不會 | 第一次跑開瀏覽器登入 |
+
+Spotify API：前往 [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) 建立 App，Redirect URI 填 `http://127.0.0.1:8888/callback`。Client ID / Secret 在 `config.py`。
+ACRCloud 金鑰放 `.env`（git 忽略；`config.py` 會自動讀），三個留空就只用 Shazam。
 
 ---
 
