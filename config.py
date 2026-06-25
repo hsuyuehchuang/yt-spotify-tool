@@ -4,6 +4,8 @@
 既有 script（yt-to-spotify）共用同一份設定，避免複製多份。
 """
 
+import os
+
 # --- Spotify ---
 # 沿用既有 script 的值。前往 https://developer.spotify.com/dashboard 建立 App，
 # Redirect URI 填 http://127.0.0.1:8888/callback，API 選 Web API。
@@ -18,6 +20,17 @@ SPOTIFY_SCOPE_WRITE = "playlist-read-private playlist-modify-public playlist-mod
 # SoundCloud 官方 API 註冊已關閉，沒有靜態金鑰；client_id 於執行期從 web player
 # 動態抓取（見 waterfall.py）。這個開關可整個關掉 SoundCloud 那一層。
 SOUNDCLOUD_ENABLED = True
+
+# --- ACRCloud（可選的第二辨識引擎，對 DJ mix 較佳）---
+# 去 https://console.acrcloud.com 建一個 "Audio & Video Recognition" 專案，
+# 會給你 host / access_key / access_secret。三個都填了才會啟用 ACRCloud。
+# 建議用環境變數，不要把金鑰 commit 進 git：
+#   export ACRCLOUD_HOST=identify-xxx.acrcloud.com
+#   export ACRCLOUD_ACCESS_KEY=xxxxxxxx
+#   export ACRCLOUD_ACCESS_SECRET=xxxxxxxx
+ACRCLOUD_HOST = os.environ.get("ACRCLOUD_HOST", "")
+ACRCLOUD_ACCESS_KEY = os.environ.get("ACRCLOUD_ACCESS_KEY", "")
+ACRCLOUD_ACCESS_SECRET = os.environ.get("ACRCLOUD_ACCESS_SECRET", "")
 
 # --- 快取/暫存 ---
 SHAZAM_CACHE_DIR = ".shazam-cache"   # 每影片一個 JSON 的辨識 checkpoint

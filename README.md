@@ -75,7 +75,7 @@ python3 shazam_pipeline.py "https://www.youtube.com/watch?v=5NV6Rdv1a3I" "我的
 ### 運作方式
 
 1. 解析 playlist/影片 → 逐支下載音軌（`yt-dlp`，暫存檔處理完即刪）。
-2. **自適應掃描（不快轉，整段掃完）**：12 秒窗；沒命中前進 6 秒（重疊密掃，避免漏），命中前進 12 秒（不重疊，提速）。逐段送 `shazamio`，`track_id` 去重，並顯示即時進度條（百分比 / 已掃秒數 / 命中數 / 剩餘視窗 / ETA）。
+2. **自適應掃描（不快轉，整段掃完）**：12 秒窗；沒命中前進 6 秒（重疊密掃，避免漏），命中前進 12 秒（不重疊，提速）。逐段送辨識引擎（預設 Shazam，可選加 ACRCloud），依「歌名+歌手」去重，並顯示即時進度條（百分比 / 已掃秒數 / 命中數 / 剩餘視窗 / ETA）。
 3. **瀑布流**：Spotify 直接搜 → 沒中改用 YT Music / SoundCloud 拿乾淨歌名回頭再搜 Spotify。最終都落地到同一個 Spotify 清單；各平台有但 Spotify 沒有的只記進報告。
 
 ### 注意
@@ -86,6 +86,25 @@ python3 shazam_pipeline.py "https://www.youtube.com/watch?v=5NV6Rdv1a3I" "我的
 - YT Music 走 `ytmusicapi` 免授權搜尋；SoundCloud 官方 API 已關閉，client_id 於執行期從 web player 動態抓取（會隨改版失效，可在 `config.py` 關閉）。
 - 僅供個人使用；逆向 Shazam 與下載音軌屬灰色地帶。
 
+### 第二辨識引擎（可選：ACRCloud）
+
+Shazam 對 DJ mix 的轉場/混音較弱。可加 **ACRCloud**（專為連續音訊設計）當第二引擎：
+每個視窗 Shazam 沒命中時才打 ACRCloud（序列、不並行，降低被限流風險），結果跨引擎依歌名去重。
+
+設定（去 [ACRCloud Console](https://console.acrcloud.com) 建 "Audio & Video Recognition" 專案拿金鑰）：
+
+```bash
+export ACRCLOUD_HOST=identify-xxx.acrcloud.com
+export ACRCLOUD_ACCESS_KEY=xxxxxxxx
+export ACRCLOUD_ACCESS_SECRET=xxxxxxxx
+```
+
+三個都設了才會啟用；沒設就只用 Shazam（行為不變）。金鑰走環境變數，不要 commit。
+
+> **物理限制（換引擎也救不了）**：地下/未發行/bootleg 若不在任何商業資料庫，任何引擎都辨識不到；
+> remix 是不同錄音，除非該 remix 本身被收錄，否則對不到原曲。
+> 已知的有名 DJ mix，人工歌單庫（1001Tracklists、MixesDB）或 **TrackSniff**（網頁工具，無 API，手動貼網址）通常更有效。
+
 ### 架構（模組分工）
 
 | 模組 | 職責 |
@@ -93,7 +112,7 @@ python3 shazam_pipeline.py "https://www.youtube.com/watch?v=5NV6Rdv1a3I" "我的
 | `shazam_pipeline.py` | 主進入點，串接整條管線、互動/參數解析、輸出統計 |
 | `audio_source.py` | yt-dlp 解析 playlist、下載單支音軌 |
 | `slicer.py` | ffmpeg 把指定時間窗切成 16kHz mono wav |
-| `recognizer.py` | 密集掃描 + shazamio 容錯/pacing + 每影片 checkpoint |
+| `recognizer.py` | 自適應掃描 + 多辨識引擎鏈（Shazam / ACRCloud）+ 容錯/pacing + checkpoint |
 | `waterfall.py` | 跨平台搜尋（Spotify → YT Music → SoundCloud） |
 | `spotify_client.py` | Spotify 搜尋/建立清單/去重/寫入（與 `yt-to-spotify.py` 共用） |
 | `config.py` | 集中金鑰與設定 |

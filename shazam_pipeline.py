@@ -24,11 +24,28 @@ import tempfile
 import time
 
 import audio_source
+import config
 import recognizer
 import slicer
 import spotify_client
-from recognizer import RecognitionBlocked, ShazamRecognizer, scan_track
+from recognizer import (
+    ACRCloudEngine,
+    EngineChain,
+    RecognitionBlocked,
+    ShazamRecognizer,
+    scan_track,
+)
 from waterfall import Waterfall
+
+
+def _build_recognizer():
+    """Shazam 一定有；config 三個 ACRCloud 金鑰都填了才加 ACRCloud 當第二引擎。"""
+    engines = [ShazamRecognizer()]
+    if config.ACRCLOUD_HOST and config.ACRCLOUD_ACCESS_KEY and config.ACRCLOUD_ACCESS_SECRET:
+        engines.append(ACRCloudEngine(
+            config.ACRCLOUD_HOST, config.ACRCLOUD_ACCESS_KEY, config.ACRCLOUD_ACCESS_SECRET))
+        print("  第二引擎: ACRCloud 已啟用", flush=True)
+    return EngineChain(engines)
 
 
 def _mmss(sec):
@@ -93,7 +110,7 @@ async def _scan_videos(videos, tmpdir, refresh):
 
         try:
             duration = slicer.probe_duration(path)
-            rec = ShazamRecognizer()
+            rec = _build_recognizer()
             prog = Progress(duration)
 
             def slice_fn(start, dur, _p=path):
