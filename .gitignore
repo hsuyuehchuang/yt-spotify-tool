@@ -10,6 +10,9 @@
 # Shazam 辨識 checkpoint（可重新產生）
 .shazam-cache/
 
+# 匯出的 tracklist（--save-list 產生）
+*_tracklist.txt
+
 # Python
 __pycache__/
 *.pyc

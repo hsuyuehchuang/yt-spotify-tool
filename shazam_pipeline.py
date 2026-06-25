@@ -11,12 +11,14 @@
 旗標：
     --no-spotify   只跑辨識並印結果，完全不碰 Spotify（dry-run，不需登入）
     --refresh      忽略 .shazam-cache 既有 checkpoint，重新辨識
+    --save-list    把完整 tracklist（時間戳 + 歌名 + 狀態）存成 .txt
 
 容錯：每支影片辨識完成即寫 checkpoint；疑似被 Shazam 限流時優雅停止，
 已完成的影片不會白跑，重跑可從 checkpoint 接續。
 """
 
 import asyncio
+import datetime
 import os
 import shutil
 import sys
@@ -183,6 +185,7 @@ def _waterfall_resolve(sp, songs):
                    "status": "spotify_direct", "exists_on": []}
         else:
             res = wf.search(s["song"], s["artist"])
+        res["pos"] = s.get("pos")
         results.append(res)
         if res["uri"]:
             print(f"  [{_STATUS_LABEL[res['status']]}] {s['song']} - {s['artist']}", flush=True)
@@ -190,6 +193,22 @@ def _waterfall_resolve(sp, songs):
             extra = f"（其他平台有: {', '.join(res['exists_on'])}）" if res["exists_on"] else ""
             print(f"  [找不到] {s['song']} - {s['artist']} {extra}", flush=True)
     return results
+
+
+def _save_tracklist(title, rows):
+    """把完整 tracklist 存成檔案：時間戳 + 歌名 + 狀態。rows 為 song dict 或 waterfall result。"""
+    safe = "".join(c if c not in r'\/:*?"<>|' else "_" for c in title)
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    path = f"./{today}_{safe}_tracklist.txt"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(f"# {title}（共 {len(rows)} 首）\n\n")
+        for r in rows:
+            pos = r.get("pos")
+            ts = _mmss(pos) if pos is not None else "--:--"
+            status = r.get("status")
+            tag = f"  [{_STATUS_LABEL.get(status, status)}]" if status else ""
+            f.write(f"{ts}  {r['song']} - {r['artist']}{tag}\n")
+    print(f"\n已存 tracklist: {path}", flush=True)
 
 
 def _print_final_list(results):
@@ -218,10 +237,11 @@ def _write_playlist(sp, playlist_name, uris):
 
 
 async def main():
-    flags = {"--no-spotify", "--refresh"}
+    flags = {"--no-spotify", "--refresh", "--save-list"}
     args = [a for a in sys.argv[1:] if a not in flags]
     no_spotify = "--no-spotify" in sys.argv
     refresh = "--refresh" in sys.argv
+    save_list = "--save-list" in sys.argv
 
     if args:
         url = args[0]
@@ -259,6 +279,8 @@ async def main():
         return
 
     if no_spotify:
+        if save_list:
+            _save_tracklist(name_arg or playlist_title, songs)
         print(f"\n[dry-run] --no-spotify：只辨識，完全不碰 Spotify（共 {len(songs)} 首）。")
         return
 
@@ -280,6 +302,8 @@ async def main():
 
     # 結尾：完整列出所有辨識到的歌 + 狀態
     _print_final_list(results)
+    if save_list:
+        _save_tracklist(playlist_name, results)
 
     print(f"\n=== 完成 ===")
     print(f"加入清單: {len(uris)} 首 / Spotify 找不到: {len(not_found)} 首")

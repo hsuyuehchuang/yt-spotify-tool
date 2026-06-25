@@ -81,6 +81,7 @@ async def scan_track(duration, slice_fn, recognize_fn, *, step_miss=STEP_MISS,
                     "artist": track["artist"],
                     "track_id": track.get("track_id"),
                     "spotify_uri": track.get("spotify_uri"),
+                    "pos": round(pos, 1),   # 命中的時間位置（秒），給 tracklist 時間戳用
                 }
                 found.append(song)
                 if on_found is not None:

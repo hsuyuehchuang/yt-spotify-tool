@@ -31,13 +31,20 @@ def search_track(sp, song: str, artist: str) -> dict | None:
     """多輪搜尋，由精準到寬鬆。每輪結果都過 title_matches + artist_matches 驗證。"""
     artists = [a.strip() for a in artist.split(",")]
     main_artist = artists[0]
+    # 標題「雙向」高度吻合但 artist 對不上時的後備（常見於藝名/改名，如 Puff Daddy=Diddy）
+    title_fallback = None
 
     def pick(items):
+        nonlocal title_fallback
         for item in items:
             r_name = item["name"]
             r_artist = ", ".join(a["name"] for a in item["artists"])
             if title_matches(song, r_name) and artist_matches(artists, r_artist):
                 return item
+            if (title_fallback is None
+                    and title_matches(song, r_name, 0.9)
+                    and title_matches(r_name, song, 0.9)):
+                title_fallback = item
         return None
 
     # 收集多種查詢策略
@@ -58,7 +65,7 @@ def search_track(sp, song: str, artist: str) -> dict | None:
         if matched:
             return matched
 
-    return None
+    return title_fallback   # 沒有嚴格命中時，退而用標題高度吻合者（容忍藝名/改名）
 
 
 def find_or_create_playlist(sp, user_id: str, playlist_name: str) -> dict:
