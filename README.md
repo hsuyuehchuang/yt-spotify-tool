@@ -3,6 +3,7 @@
 ## 快速查閱
 
 ``` bash
+python3 music.py                  # 統一入口：貼任意網址自動分流（Spotify/YouTube/Bandcamp，推薦）
 python3 shazam_pipeline.py        # 長影片/混音 → Shazam 聲紋辨識 → Spotify（互動模式，直接貼網址）
 python3 bandcamp-to-mp3.py        # 貼網址下載 MP3（Bandcamp / YouTube 單曲，互動模式）
 python3 yt-to-spotify.py          # YouTube 自帶音樂卡片 → Spotify 播放清單
@@ -11,7 +12,10 @@ python3 yt-to-mp3.py scrape       # YouTube 爬歌名 → 下載 MP3
 python3 yt-to-mp3.py download     # YouTube 影片/Playlist → 下載 MP3
 ```
 
-`shazam_pipeline` / `bandcamp` / `yt-to-mp3` / `spotify-to-mp3` 直接跑（不帶參數）就會進**互動模式**，
+最方便的是 **`music.py`**：貼任意網址，自動判斷該走哪支（Spotify / Bandcamp 直接分流，
+YouTube 會問一句要下載還是辨識）。底層用 subprocess 呼叫既有 script，不動現有程式。
+
+`shazam_pipeline` / `bandcamp` / `yt-to-mp3` / `spotify-to-mp3` 也都能各自直接跑（不帶參數）進**互動模式**，
 跳提示貼網址，**不用引號、不用跳脫**。把網址當參數傳時，含 `&` 的網址記得用引號包住（見各節範例）。
 （`yt-to-spotify` 仍只吃參數。）
 
