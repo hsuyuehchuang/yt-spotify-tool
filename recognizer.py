@@ -80,6 +80,7 @@ async def scan_track(duration, slice_fn, recognize_fn, *, step_miss=STEP_MISS,
                     "song": track["title"],
                     "artist": track["artist"],
                     "track_id": track.get("track_id"),
+                    "spotify_uri": track.get("spotify_uri"),
                 }
                 found.append(song)
                 if on_found is not None:
@@ -181,6 +182,7 @@ class ShazamRecognizer(_RetryingEngine):
             "track_id": track["key"],
             "title": (track.get("title") or "").strip(),
             "artist": (track.get("subtitle") or "Unknown").strip(),
+            "spotify_uri": None,   # Shazam 不提供 Spotify id
         }
 
 
@@ -236,10 +238,14 @@ class ACRCloudEngine(_RetryingEngine):
         if not title:
             return None
         artist = ", ".join(a.get("name", "") for a in (m.get("artists") or [])).strip() or "Unknown"
+        # 若專案有開 spotify 3rd-party ID，回應會直接附 Spotify track id → 之後可跳過搜尋
+        sp_track = ((m.get("external_metadata") or {}).get("spotify") or {}).get("track") or {}
+        spotify_uri = f"spotify:track:{sp_track['id']}" if sp_track.get("id") else None
         return {
             "track_id": m.get("acrid") or f"acr:{title}:{artist}",
             "title": title,
             "artist": artist,
+            "spotify_uri": spotify_uri,
         }
 
 

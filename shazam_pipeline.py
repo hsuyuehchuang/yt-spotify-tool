@@ -163,6 +163,7 @@ def _dedup(all_found):
 
 
 _STATUS_LABEL = {
+    "spotify_direct": "已加入(ACRCloud 直接給 Spotify ID)",
     "spotify": "已加入",
     "spotify_via_ytmusic": "已加入(經 YT Music)",
     "spotify_via_soundcloud": "已加入(經 SoundCloud)",
@@ -176,7 +177,12 @@ def _waterfall_resolve(sp, songs):
     results = []
     print("\n瀑布流搜尋中（Spotify -> YT Music -> SoundCloud）...", flush=True)
     for s in songs:
-        res = wf.search(s["song"], s["artist"])
+        if s.get("spotify_uri"):
+            # ACRCloud 已直接給 Spotify ID，不必再搜尋
+            res = {"song": s["song"], "artist": s["artist"], "uri": s["spotify_uri"],
+                   "status": "spotify_direct", "exists_on": []}
+        else:
+            res = wf.search(s["song"], s["artist"])
         results.append(res)
         if res["uri"]:
             print(f"  [{_STATUS_LABEL[res['status']]}] {s['song']} - {s['artist']}", flush=True)

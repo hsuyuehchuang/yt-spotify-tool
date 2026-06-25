@@ -132,7 +132,7 @@ def test_shazam_parse():
     assert p({}) is None
     assert p({"track": {"title": "T"}}) is None        # 無 key
     got = p({"track": {"key": "123", "title": " T ", "subtitle": " Artist "}})
-    assert got == {"track_id": "123", "title": "T", "artist": "Artist"}, got
+    assert got == {"track_id": "123", "title": "T", "artist": "Artist", "spotify_uri": None}, got
     print("[OK] ShazamRecognizer._parse")
 
 
@@ -141,10 +141,16 @@ def test_acrcloud_parse():
     assert p({}) is None
     assert p({"status": {"code": 1001}, "metadata": {}}) is None       # 沒對到
     assert p({"status": {"code": 0}, "metadata": {"music": []}}) is None
+    # 無 spotify external id → spotify_uri 為 None
     got = p({"status": {"code": 0}, "metadata": {"music": [
         {"title": "T", "artists": [{"name": "A1"}, {"name": "A2"}], "acrid": "xyz"}]}})
-    assert got == {"track_id": "xyz", "title": "T", "artist": "A1, A2"}, got
-    print("[OK] ACRCloudEngine._parse")
+    assert got == {"track_id": "xyz", "title": "T", "artist": "A1, A2", "spotify_uri": None}, got
+    # 有 spotify external id → 帶出 spotify:track:<id>
+    got2 = p({"status": {"code": 0}, "metadata": {"music": [
+        {"title": "T", "artists": [{"name": "A1"}], "acrid": "xyz",
+         "external_metadata": {"spotify": {"track": {"id": "5EjV0pTRXSMhVbbPVE8u0y"}}}}]}})
+    assert got2["spotify_uri"] == "spotify:track:5EjV0pTRXSMhVbbPVE8u0y", got2
+    print("[OK] ACRCloudEngine._parse（含 spotify_uri）")
 
 
 if __name__ == "__main__":
