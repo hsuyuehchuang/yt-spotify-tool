@@ -3,6 +3,7 @@
 ## 快速查閱
 
 ``` bash
+python3 shazam_pipeline.py "<yt_url>" ["<playlist_name>"]  # 長影片/混音 → Shazam 聲紋辨識 → Spotify 播放清單
 python3 yt-to-spotify.py  "<yt_url>" ["<playlist_name>"]   # YouTube 爬歌名 → Spotify 播放清單
 python3 spotify-to-mp3.py "<spotify_url>"                  # Spotify 播放清單 → MP3
 python3 yt-to-mp3.py scrape   "<yt_url>"                   # YouTube 爬歌名 → 下載 MP3
@@ -11,16 +12,49 @@ python3 bandcamp-to-mp3.py                                  # 互動模式，貼
 python3 bandcamp-to-mp3.py "<url>"                         # Bandcamp 或 YouTube 單曲
 ```
 
+> `shazam_pipeline.py` 與 `yt-to-spotify.py` 差異：後者只能抓 YouTube **自帶的音樂卡片**（DJ mix /
+> 合輯這類未標記長影片沒有卡片，會抓不到）；前者直接對音軌做 Shazam 聲紋辨識，專治未標記長影片。
+
 ---
 
 ## 環境需求
 
 ```bash
-pip install yt-dlp spotipy mutagen requests
+pip install -r requirements.txt    # 或手動：pip install yt-dlp spotipy mutagen requests shazamio ytmusicapi
 sudo apt-get install ffmpeg
 ```
 
-Spotify API：前往 [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) 建立 App，Redirect URI 填 `http://127.0.0.1:8888/callback`，API 選 Web API。Client ID / Secret 寫在各 script 頂部。
+Spotify API：前往 [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) 建立 App，Redirect URI 填 `http://127.0.0.1:8888/callback`，API 選 Web API。Client ID / Secret 集中在 `config.py`。
+
+---
+
+## shazam_pipeline.py
+
+把 **未標記的長影片**（DJ mix、音樂合輯）丟進來，對音軌做 Shazam 聲紋辨識，命中的歌全部匯進**單一 Spotify 播放清單**。
+
+```bash
+# dry-run：只辨識並印結果，完全不碰 Spotify（不需登入）
+python3 shazam_pipeline.py "<yt_url>" --no-spotify
+
+# 辨識完寫入（或更新）Spotify 播放清單
+python3 shazam_pipeline.py "<yt_url>" "Mix 辨識結果"
+
+# 忽略 checkpoint 重新辨識
+python3 shazam_pipeline.py "<yt_url>" "Mix 辨識結果" --refresh
+```
+
+**運作方式：**
+1. 解析 playlist/影片 → 逐支下載音軌（`yt-dlp`，暫存檔處理完即刪）。
+2. **動態滑動時間窗**：12 秒窗送 `shazamio`；命中就快進 90–120 秒，未命中平移 5–10 秒，連 3 次未命中就跳過該段。`track_id` 去重。
+3. **瀑布流**：Spotify 直接搜 → 沒中改用 YT Music / SoundCloud 拿乾淨歌名回頭再搜 Spotify。最終都落地到同一個 Spotify 清單；各平台有但 Spotify 沒有的只記進報告。
+
+**注意：**
+- `shazamio` 是逆向工程的非官方庫，會遇到限流/暫時封 IP。本管線內建退避重試；連續失敗會**優雅停止並保留進度**（每支影片辨識完即寫 `.shazam-cache/<video_id>.json`，重跑可接續）。
+- 快進 90–120 秒會漏掉長度短於跳躍距離的歌（DJ mix 中 <90 秒的段落）；參數在 `recognizer.py` 頂端可調。
+- YT Music 走 `ytmusicapi` 免授權搜尋；SoundCloud 官方 API 已關閉，client_id 於執行期從 web player 動態抓取（會隨改版失效，可在 `config.py` 關閉）。
+- 僅供個人使用；逆向 Shazam 與下載音軌屬灰色地帶。
+
+模組分工：`audio_source.py`（下載）、`slicer.py`（ffmpeg 切片）、`recognizer.py`（滑動窗狀態機 + 容錯）、`waterfall.py`（跨平台搜尋）、`spotify_client.py`（Spotify 搜尋/寫入，與 `yt-to-spotify.py` 共用）。狀態機單元測試：`python3 test_recognizer.py`（不連網）。
 
 ---
 

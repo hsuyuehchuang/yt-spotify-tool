@@ -7,6 +7,9 @@
 # YouTube 爬蟲 cache（可重新產生）
 .yt-music-cache/
 
+# Shazam 辨識 checkpoint（可重新產生）
+.shazam-cache/
+
 # Python
 __pycache__/
 *.pyc

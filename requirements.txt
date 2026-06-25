@@ -1,0 +1,12 @@
+# Python 3.10+（.python-version 標 3.12，3.10 亦可）
+# 系統需另外安裝 ffmpeg：sudo apt-get install ffmpeg
+
+# 既有 script 共用
+yt-dlp>=2024.1.0
+spotipy>=2.23.0
+mutagen>=1.47.0
+requests>=2.31.0
+
+# shazam_pipeline 新增
+shazamio>=0.7.0      # 需提供 Shazam().recognize(bytes) 介面
+ytmusicapi>=1.5.0    # 免授權搜尋（瀑布流 Level 2）

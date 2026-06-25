@@ -1,0 +1,23 @@
+"""集中金鑰與共用設定。
+
+把各 script 原本散在檔案頂端的金鑰收斂到這裡，新管線（shazam_pipeline）與
+既有 script（yt-to-spotify）共用同一份設定，避免複製多份。
+"""
+
+# --- Spotify ---
+# 沿用既有 script 的值。前往 https://developer.spotify.com/dashboard 建立 App，
+# Redirect URI 填 http://127.0.0.1:8888/callback，API 選 Web API。
+SPOTIFY_CLIENT_ID = "9e989e6f2e034ca695d116607ec0cca6"
+SPOTIFY_CLIENT_SECRET = "35a77882d91343a7a45fb507e1bd82fc"
+SPOTIFY_REDIRECT_URI = "http://127.0.0.1:8888/callback"
+
+# 寫入播放清單需要的權限
+SPOTIFY_SCOPE_WRITE = "playlist-read-private playlist-modify-public playlist-modify-private"
+
+# --- SoundCloud ---
+# SoundCloud 官方 API 註冊已關閉，沒有靜態金鑰；client_id 於執行期從 web player
+# 動態抓取（見 waterfall.py）。這個開關可整個關掉 SoundCloud 那一層。
+SOUNDCLOUD_ENABLED = True
+
+# --- 快取/暫存 ---
+SHAZAM_CACHE_DIR = ".shazam-cache"   # 每影片一個 JSON 的辨識 checkpoint
