@@ -3,14 +3,16 @@
 ## 快速查閱
 
 ``` bash
-python3 shazam_pipeline.py "<yt_url>" ["<playlist_name>"]  # 長影片/混音 → Shazam 聲紋辨識 → Spotify 播放清單
-python3 yt-to-spotify.py  "<yt_url>" ["<playlist_name>"]   # YouTube 爬歌名 → Spotify 播放清單
-python3 spotify-to-mp3.py "<spotify_url>"                  # Spotify 播放清單 → MP3
-python3 yt-to-mp3.py scrape   "<yt_url>"                   # YouTube 爬歌名 → 下載 MP3
-python3 yt-to-mp3.py download "<yt_url>"                   # YouTube 影片/Playlist → 下載 MP3
-python3 bandcamp-to-mp3.py                                  # 互動模式，貼網址下載
-python3 bandcamp-to-mp3.py "<url>"                         # Bandcamp 或 YouTube 單曲
+python3 shazam_pipeline.py        # 長影片/混音 → Shazam 聲紋辨識 → Spotify（互動模式，直接貼網址）
+python3 bandcamp-to-mp3.py        # 貼網址下載 MP3（Bandcamp / YouTube 單曲，互動模式）
+python3 yt-to-spotify.py          # YouTube 自帶音樂卡片 → Spotify 播放清單
+python3 spotify-to-mp3.py         # Spotify 播放清單 → MP3
+python3 yt-to-mp3.py scrape       # YouTube 爬歌名 → 下載 MP3
+python3 yt-to-mp3.py download     # YouTube 影片/Playlist → 下載 MP3
 ```
+
+互動模式（`shazam_pipeline` / `bandcamp`）直接跑就會跳提示貼網址，**不用引號、不用跳脫**。
+其餘 script 把網址當參數傳；網址含 `&` 時記得用引號包住（見各節範例）。
 
 > `shazam_pipeline.py` 與 `yt-to-spotify.py` 差異：後者只能抓 YouTube **自帶的音樂卡片**（DJ mix /
 > 合輯這類未標記長影片沒有卡片，會抓不到）；前者直接對音軌做 Shazam 聲紋辨識，專治未標記長影片。
@@ -32,29 +34,69 @@ Spotify API：前往 [Spotify Developer Dashboard](https://developer.spotify.com
 
 把 **未標記的長影片**（DJ mix、音樂合輯）丟進來，對音軌做 Shazam 聲紋辨識，命中的歌全部匯進**單一 Spotify 播放清單**。
 
+### 快速開始（互動模式，推薦）
+
+直接跑，照提示貼網址即可，**不用引號、不用跳脫**：
+
 ```bash
-# dry-run：只辨識並印結果，完全不碰 Spotify（不需登入）
-python3 shazam_pipeline.py "<yt_url>" --no-spotify
-
-# 辨識完寫入（或更新）Spotify 播放清單
-python3 shazam_pipeline.py "<yt_url>" "Mix 辨識結果"
-
-# 忽略 checkpoint 重新辨識
-python3 shazam_pipeline.py "<yt_url>" "Mix 辨識結果" --refresh
+python3 shazam_pipeline.py
+```
+```
+貼上 YouTube 播放清單或影片網址: https://www.youtube.com/watch?v=5NV6Rdv1a3I
+Spotify 播放清單名稱（直接 Enter = 用影片標題）: 我的混音清單
 ```
 
-**運作方式：**
+只想先看辨識結果、不要寫 Spotify（不需登入）：
+
+```bash
+python3 shazam_pipeline.py --no-spotify
+```
+
+### 第一次寫入 Spotify
+
+第一次要寫清單時會開瀏覽器要求 Spotify 登入授權，授權後 token 會存在 `.cache`，之後不再詢問。
+帳號設定在 `config.py`（Client ID / Secret / Redirect URI）。
+
+### 進階：直接帶參數（自動化用）
+
+網址當參數傳時，因為網址含 `&`，**要用引號包住**（不然 shell 會把 `&` 當成丟到背景）：
+
+```bash
+python3 shazam_pipeline.py "https://www.youtube.com/playlist?list=PLxxxx" "Weekender 2026"
+python3 shazam_pipeline.py "https://www.youtube.com/watch?v=5NV6Rdv1a3I" "我的清單" --refresh
+```
+
+| 旗標 | 作用 |
+|---|---|
+| `--no-spotify` | 只辨識並印結果，完全不碰 Spotify（dry-run，不需登入） |
+| `--refresh` | 忽略 `.shazam-cache` 既有 checkpoint，重新辨識 |
+
+### 運作方式
+
 1. 解析 playlist/影片 → 逐支下載音軌（`yt-dlp`，暫存檔處理完即刪）。
 2. **動態滑動時間窗**：12 秒窗送 `shazamio`；命中就快進 90–120 秒，未命中平移 5–10 秒，連 3 次未命中就跳過該段。`track_id` 去重。
 3. **瀑布流**：Spotify 直接搜 → 沒中改用 YT Music / SoundCloud 拿乾淨歌名回頭再搜 Spotify。最終都落地到同一個 Spotify 清單；各平台有但 Spotify 沒有的只記進報告。
 
-**注意：**
+### 注意
+
 - `shazamio` 是逆向工程的非官方庫，會遇到限流/暫時封 IP。本管線內建退避重試；連續失敗會**優雅停止並保留進度**（每支影片辨識完即寫 `.shazam-cache/<video_id>.json`，重跑可接續）。
 - 快進 90–120 秒會漏掉長度短於跳躍距離的歌（DJ mix 中 <90 秒的段落）；參數在 `recognizer.py` 頂端可調。
 - YT Music 走 `ytmusicapi` 免授權搜尋；SoundCloud 官方 API 已關閉，client_id 於執行期從 web player 動態抓取（會隨改版失效，可在 `config.py` 關閉）。
 - 僅供個人使用；逆向 Shazam 與下載音軌屬灰色地帶。
 
-模組分工：`audio_source.py`（下載）、`slicer.py`（ffmpeg 切片）、`recognizer.py`（滑動窗狀態機 + 容錯）、`waterfall.py`（跨平台搜尋）、`spotify_client.py`（Spotify 搜尋/寫入，與 `yt-to-spotify.py` 共用）。狀態機單元測試：`python3 test_recognizer.py`（不連網）。
+### 架構（模組分工）
+
+| 模組 | 職責 |
+|---|---|
+| `shazam_pipeline.py` | 主進入點，串接整條管線、互動/參數解析、輸出統計 |
+| `audio_source.py` | yt-dlp 解析 playlist、下載單支音軌 |
+| `slicer.py` | ffmpeg 把指定時間窗切成 16kHz mono wav |
+| `recognizer.py` | 滑動窗狀態機 + shazamio 容錯 + 每影片 checkpoint |
+| `waterfall.py` | 跨平台搜尋（Spotify → YT Music → SoundCloud） |
+| `spotify_client.py` | Spotify 搜尋/建立清單/去重/寫入（與 `yt-to-spotify.py` 共用） |
+| `config.py` | 集中金鑰與設定 |
+
+狀態機單元測試（不連網）：`python3 test_recognizer.py`
 
 ---
 

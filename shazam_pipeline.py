@@ -3,8 +3,10 @@
 針對 DJ mix / 合輯這類「未標記長影片」：下載音軌 -> 滑動時間窗用 shazamio 辨識 ->
 瀑布流（Spotify -> YT Music -> SoundCloud）確認 -> 命中全部匯進單一 Spotify 清單。
 
-用法：
-    python3 shazam_pipeline.py "<playlist_or_video_url>" ["<清單名稱>"] [旗標]
+用法（互動模式為主，免引號免跳脫）：
+    python3 shazam_pipeline.py                 直接跑，跳提示貼網址（網址含 & 也不用引號）
+    python3 shazam_pipeline.py --no-spotify    互動 + 只辨識不寫 Spotify
+    python3 shazam_pipeline.py URL [清單名] [--no-spotify] [--refresh]   給參數（自動化用）
 
 旗標：
     --no-spotify   只跑辨識並印結果，完全不碰 Spotify（dry-run，不需登入）
@@ -26,8 +28,6 @@ import slicer
 import spotify_client
 from recognizer import RecognitionBlocked, ShazamRecognizer, scan_track
 from waterfall import Waterfall
-
-DEFAULT_URL = "https://www.youtube.com/watch?v=BNduoxSKw7Q&list=PLSdbWKBxNJL_3Sc4ffon7dMsO4G9vlKLI"
 
 
 async def _scan_videos(videos, tmpdir, refresh):
@@ -141,8 +141,16 @@ async def main():
     no_spotify = "--no-spotify" in sys.argv
     refresh = "--refresh" in sys.argv
 
-    url = args[0] if args else DEFAULT_URL
-    name_arg = args[1] if len(args) > 1 else None
+    if args:
+        url = args[0]
+        name_arg = args[1] if len(args) > 1 else None
+    else:
+        # 互動模式：直接貼網址，免引號免跳脫（網址裡的 & 與空白都 OK）
+        url = input("貼上 YouTube 播放清單或影片網址: ").strip()
+        if not url:
+            print("沒有輸入網址，結束。")
+            return
+        name_arg = input("Spotify 播放清單名稱（直接 Enter = 用影片標題）: ").strip() or None
 
     print(f"=== 解析 YouTube 來源 ==={' (--refresh)' if refresh else ''}")
     playlist_title, videos = audio_source.parse_playlist(url)
