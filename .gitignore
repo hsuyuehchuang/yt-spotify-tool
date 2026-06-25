@@ -16,6 +16,9 @@
 # 匯出的 tracklist（--save-list 產生）
 *_tracklist.txt
 
+# 執行 log
+*.log
+
 # Python
 __pycache__/
 *.pyc
