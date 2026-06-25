@@ -21,6 +21,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 
 import audio_source
 import recognizer
@@ -28,6 +29,46 @@ import slicer
 import spotify_client
 from recognizer import RecognitionBlocked, ShazamRecognizer, scan_track
 from waterfall import Waterfall
+
+
+def _mmss(sec):
+    m, s = divmod(max(0, int(sec)), 60)
+    return f"{m:02d}:{s:02d}"
+
+
+class Progress:
+    """單支影片的掃描進度條（純文字，用 \\r 即時更新）。
+
+    顯示：百分比、已掃秒數/總長、命中數、已做視窗數、估計剩餘視窗、ETA。
+    """
+
+    def __init__(self, duration):
+        self.duration = duration or 1.0
+        self.start = time.monotonic()
+        self.windows = 0
+        self.hits = 0
+
+    def update(self, pos, track):
+        self.windows += 1
+        pct = min(1.0, pos / self.duration)
+        elapsed = time.monotonic() - self.start
+        eta = (elapsed / pct - elapsed) if pct > 0.02 else 0
+        avg_step = pos / self.windows if self.windows else 0
+        remain = int((self.duration - pos) / avg_step) if avg_step > 0 else 0
+        bar_n = 24
+        filled = int(bar_n * pct)
+        bar = "#" * filled + "-" * (bar_n - filled)
+        print(f"\r  [{bar}] {pct * 100:3.0f}%  {_mmss(pos)}/{_mmss(self.duration)}  "
+              f"命中 {self.hits}  視窗 {self.windows}(剩~{remain})  ETA {_mmss(eta)}  ",
+              end="", flush=True)
+
+    def found(self, pos, song):
+        self.hits += 1
+        # 先清掉進度條那行，印出命中（下一次 update 會重畫進度條）
+        print(f"\r{' ' * 92}\r    {_mmss(pos)} 命中: {song['song']} - {song['artist']}", flush=True)
+
+    def done(self):
+        print()  # 進度條換行收尾
 
 
 async def _scan_videos(videos, tmpdir, refresh):
@@ -53,11 +94,16 @@ async def _scan_videos(videos, tmpdir, refresh):
         try:
             duration = slicer.probe_duration(path)
             rec = ShazamRecognizer()
+            prog = Progress(duration)
 
             def slice_fn(start, dur, _p=path):
                 return slicer.cut(_p, start, dur)
 
-            found = await scan_track(duration, slice_fn, rec.recognize)
+            found = await scan_track(
+                duration, slice_fn, rec.recognize,
+                on_window=prog.update, on_found=prog.found,
+            )
+            prog.done()
         except RecognitionBlocked as e:
             print(f"  [中止] 辨識連續失敗，停止本次（本片暫得 {len(e.partial)} 首，不快取）", flush=True)
             if e.reason:

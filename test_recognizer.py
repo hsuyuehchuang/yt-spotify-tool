@@ -1,7 +1,7 @@
-"""scan_track 狀態機單元測試：不連網、不需 shazamio / ffmpeg。
+"""scan_track 掃描邏輯單元測試：不連網、不需 shazamio / ffmpeg。
 
-用假的 slice_fn（直接回傳 pos）+ 假的 recognize_fn（依 pos 判定命中）+ 固定 rng，
-驗證命中快進、未命中平移、連續 3 次未命中跳過、track_id 去重、被封例外。
+驗證：整段都掃不快轉、步長自適應（命中跳一窗、沒命中重疊密掃）、track_id 去重、
+窄窗短歌也找得到、被封例外帶 partial + reason。
 直接執行：python3 test_recognizer.py
 """
 
@@ -9,13 +9,6 @@ import asyncio
 
 import recognizer
 from recognizer import scan_track, RecognitionBlocked
-
-
-class FixedRng:
-    """uniform 一律回傳下界，讓 pos 推進完全可預測。"""
-
-    def uniform(self, a, b):
-        return a
 
 
 def slice_passthrough(start, dur):
@@ -41,52 +34,67 @@ def run(coro):
     return asyncio.run(coro)
 
 
-def test_hit_fastforward_dedup_two_songs():
-    # A: [0,50)  gap  B: [100,300)   duration 320
-    regions = [
-        (0, 50, "A", "Song A", "Artist A"),
-        (100, 300, "B", "Song B", "Artist B"),
-    ]
+def test_adaptive_step_hit_vs_miss():
+    # A: [0,40) 命中區；gap [40,80)；duration 80；window=12, step_hit=12, step_miss=6
+    regions = [(0, 40, "A", "Song A", "Artist A")]
     rec, calls = make_recognizer(regions)
-    found = run(scan_track(320, slice_passthrough, rec, rng=FixedRng()))
-    ids = [f["track_id"] for f in found]
-    assert ids == ["A", "B"], ids                      # 兩首、各一次（去重）
-    assert found[0]["song"] == "Song A"
-    assert found[1]["artist"] == "Artist B"
-    print(f"[OK] hit/fastforward/dedup: found={ids}, recognize_calls={calls['n']}")
+    found = run(scan_track(80, slice_passthrough, rec, step_miss=6, step_hit=12, window=12))
+    assert [f["track_id"] for f in found] == ["A"], found
+    # 命中區用 12 步：pos 0,12,24,36；之後進 gap 用 6 步：48,54,60,66（72+12>80 停）
+    assert calls["n"] == 8, calls["n"]
+    print(f"[OK] 自適應步長：命中跳 12、沒命中跳 6，共 {calls['n']} 視窗")
 
 
-def test_three_miss_triggers_skip():
-    # 全程無歌，duration 60。連 3 次 miss 應改快進（FF=90）直接跳出，而非一路平移。
-    rec, calls = make_recognizer([])
-    found = run(scan_track(60, slice_passthrough, rec, rng=FixedRng()))
-    assert found == [], found
-    # SLIDE=5 平移：pos 0->5->10，第 3 次 miss 觸發 FF=90 -> pos=100 > 60 結束 => 共 3 次
-    assert calls["n"] == 3, calls["n"]
-    print(f"[OK] 3-miss skip: recognize_calls={calls['n']} (若退化成純平移會是 ~10+)")
+def test_no_fastforward_finds_narrow_song():
+    # 一首只出現在 [90,102) 的窄窗短歌；舊的快進(90~120)會跳過，密集掃描要找得到
+    regions = [(90, 102, "C", "Blip", "Artist C")]
+    rec, _ = make_recognizer(regions)
+    found = run(scan_track(200, slice_passthrough, rec, step_miss=6, step_hit=12, window=12))
+    assert [f["track_id"] for f in found] == ["C"], found
+    print("[OK] 不快轉：窄窗短歌也找得到")
 
 
-def test_blocked_carries_partial():
-    # 先命中 A，之後 recognize 丟 RecognitionBlocked，scan_track 應帶 partial 重拋
+def test_dedup_across_windows():
+    # 同一首橫跨多個視窗，只算一次
+    regions = [(0, 60, "A", "Song A", "Artist A")]
+    rec, _ = make_recognizer(regions)
+    found = run(scan_track(70, slice_passthrough, rec, step_miss=6, step_hit=12, window=12))
+    assert [f["track_id"] for f in found] == ["A"], found
+    print("[OK] 跨視窗去重")
+
+
+def test_on_callbacks():
+    regions = [(0, 20, "A", "Song A", "Artist A")]
+    rec, _ = make_recognizer(regions)
+    windows, founds = [], []
+    run(scan_track(60, slice_passthrough, rec, step_miss=6, step_hit=12, window=12,
+                   on_window=lambda pos, tr: windows.append(pos),
+                   on_found=lambda pos, s: founds.append(s["track_id"])))
+    assert windows, "on_window 應每視窗被呼叫"
+    assert founds == ["A"], founds   # on_found 只在「新」歌觸發一次
+    print(f"[OK] on_window({len(windows)} 次) / on_found({founds})")
+
+
+def test_blocked_carries_partial_and_reason():
     state = {"n": 0}
 
     async def rec(pos):
         state["n"] += 1
         if state["n"] == 1:
             return {"track_id": "A", "title": "Song A", "artist": "Artist A"}
-        raise RecognitionBlocked()
+        raise RecognitionBlocked(reason="HTTPError: 429")
 
     try:
-        run(scan_track(1000, slice_passthrough, rec, rng=FixedRng()))
+        run(scan_track(1000, slice_passthrough, rec, step_miss=6, step_hit=12, window=12))
     except RecognitionBlocked as e:
         assert [s["track_id"] for s in e.partial] == ["A"], e.partial
-        print(f"[OK] blocked carries partial: {[s['song'] for s in e.partial]}")
+        assert "429" in e.reason, e.reason
+        print(f"[OK] blocked 帶 partial + reason: {e.reason}")
     else:
         raise AssertionError("應丟出 RecognitionBlocked")
 
 
 def test_shazam_parse():
-    # _parse：有 track.key 才算命中
     p = recognizer.ShazamRecognizer._parse
     assert p({}) is None
     assert p({"matches": []}) is None
@@ -97,8 +105,10 @@ def test_shazam_parse():
 
 
 if __name__ == "__main__":
-    test_hit_fastforward_dedup_two_songs()
-    test_three_miss_triggers_skip()
-    test_blocked_carries_partial()
+    test_adaptive_step_hit_vs_miss()
+    test_no_fastforward_finds_narrow_song()
+    test_dedup_across_windows()
+    test_on_callbacks()
+    test_blocked_carries_partial_and_reason()
     test_shazam_parse()
     print("\n全部通過")

@@ -75,13 +75,14 @@ python3 shazam_pipeline.py "https://www.youtube.com/watch?v=5NV6Rdv1a3I" "我的
 ### 運作方式
 
 1. 解析 playlist/影片 → 逐支下載音軌（`yt-dlp`，暫存檔處理完即刪）。
-2. **動態滑動時間窗**：12 秒窗送 `shazamio`；命中就快進 90–120 秒，未命中平移 5–10 秒，連 3 次未命中就跳過該段。`track_id` 去重。
+2. **自適應掃描（不快轉，整段掃完）**：12 秒窗；沒命中前進 6 秒（重疊密掃，避免漏），命中前進 12 秒（不重疊，提速）。逐段送 `shazamio`，`track_id` 去重，並顯示即時進度條（百分比 / 已掃秒數 / 命中數 / 剩餘視窗 / ETA）。
 3. **瀑布流**：Spotify 直接搜 → 沒中改用 YT Music / SoundCloud 拿乾淨歌名回頭再搜 Spotify。最終都落地到同一個 Spotify 清單；各平台有但 Spotify 沒有的只記進報告。
 
 ### 注意
 
 - `shazamio` 是逆向工程的非官方庫，會遇到限流/暫時封 IP。本管線內建退避重試；連續失敗會**優雅停止並保留進度**（每支影片辨識完即寫 `.shazam-cache/<video_id>.json`，重跑可接續）。
-- 快進 90–120 秒會漏掉長度短於跳躍距離的歌（DJ mix 中 <90 秒的段落）；參數在 `recognizer.py` 頂端可調。
+- 召回率 vs 速度由 `recognizer.py` 頂端的 `STEP_MISS` / `STEP_HIT` 控制：`STEP_MISS` 越小、沒命中的段落掃得越密（越不易漏，但越慢、越易被限流）；`STEP_HIT` 是命中後前進量。
+- 找不到全部歌通常不是 bug：DJ mix 的混音/轉場，或該曲目不在 Shazam 資料庫，本來就辨識不出。
 - YT Music 走 `ytmusicapi` 免授權搜尋；SoundCloud 官方 API 已關閉，client_id 於執行期從 web player 動態抓取（會隨改版失效，可在 `config.py` 關閉）。
 - 僅供個人使用；逆向 Shazam 與下載音軌屬灰色地帶。
 
@@ -92,7 +93,7 @@ python3 shazam_pipeline.py "https://www.youtube.com/watch?v=5NV6Rdv1a3I" "我的
 | `shazam_pipeline.py` | 主進入點，串接整條管線、互動/參數解析、輸出統計 |
 | `audio_source.py` | yt-dlp 解析 playlist、下載單支音軌 |
 | `slicer.py` | ffmpeg 把指定時間窗切成 16kHz mono wav |
-| `recognizer.py` | 滑動窗狀態機 + shazamio 容錯 + 每影片 checkpoint |
+| `recognizer.py` | 密集掃描 + shazamio 容錯/pacing + 每影片 checkpoint |
 | `waterfall.py` | 跨平台搜尋（Spotify → YT Music → SoundCloud） |
 | `spotify_client.py` | Spotify 搜尋/建立清單/去重/寫入（與 `yt-to-spotify.py` 共用） |
 | `config.py` | 集中金鑰與設定 |

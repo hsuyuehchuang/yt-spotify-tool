@@ -1,6 +1,6 @@
-"""動態滑動時間窗辨識 + shazamio 容錯 + 每影片 checkpoint。
+"""密集掃描辨識 + shazamio 容錯 + 每影片 checkpoint。
 
-狀態機（scan_track）刻意與 shazamio 解耦：它只吃 slice_fn / recognize_fn 兩個注入點，
+掃描（scan_track）刻意與 shazamio 解耦：它只吃 slice_fn / recognize_fn 兩個注入點，
 所以可以用假的 recognizer（不連網、不裝 shazamio）做單元測試。
 真正打 Shazam 的 ShazamRecognizer 另外提供 recognize_fn。
 """
@@ -12,11 +12,10 @@ import random
 
 from config import SHAZAM_CACHE_DIR
 
-# --- 滑動窗參數（規格 Phase 2，皆可調）---
-WINDOW = 12.0           # 每次取樣窗大小（秒）
-FF_MIN, FF_MAX = 90.0, 120.0     # 命中後快進距離
-SLIDE_MIN, SLIDE_MAX = 5.0, 10.0  # 未命中平移距離
-MAX_MISS = 3            # 連續未命中幾次就判定無歌、改快進跳過
+# --- 掃描參數（皆可調）。整支從頭掃到尾，不快轉；步長自適應 ---
+WINDOW = 12.0     # 每個取樣窗大小（秒）—— Shazam 一段大約需要 12 秒
+STEP_MISS = 6.0   # 沒命中 → 前進這麼多（重疊 50% 密掃，避免漏掉沒命中的段落）
+STEP_HIT = 12.0   # 命中 → 前進這麼多（不重疊；剛辨識過的整段不必再掃，提速）
 
 # --- shazamio 容錯參數 ---
 REQUEST_DELAY_MIN = 1.0  # 每次 Shazam 請求間的禮貌間隔（避免連發誘發限流）
@@ -35,26 +34,28 @@ class RecognitionBlocked(Exception):
         self.reason = reason
 
 
-async def scan_track(duration, slice_fn, recognize_fn, *, rng=None, on_window=None):
+async def scan_track(duration, slice_fn, recognize_fn, *, step_miss=STEP_MISS,
+                     step_hit=STEP_HIT, window=WINDOW, on_window=None, on_found=None):
     """
+    從頭到尾掃描（不快轉），步長自適應：
+      沒命中 → 前進 step_miss（重疊密掃，每個時間點被多視窗涵蓋，避免漏）
+      命中   → 前進 step_hit（不重疊；剛辨識過的整段不必再掃）
+    命中的歌依 track_id 去重。
+
     duration:    音軌長度（秒）
     slice_fn:    (start, dur) -> bytes，同步切片
     recognize_fn:(bytes) -> dict|None（async）。回 {'track_id','artist','title'} 或 None。
-                 疑似被封時自行 raise RecognitionBlocked。
-    rng:         需有 .uniform(a, b)，預設 random 模組（測試可注入固定值）。
-    on_window:   除錯回呼 (pos, track)。
+                 連續失敗時自行 raise RecognitionBlocked。
+    on_window:   每個視窗回呼 (pos, track)，可用於進度條。
+    on_found:    每找到「新」一首回呼 (pos, song)，可即時印出。
     回傳 found:  [{'song','artist','track_id'}, ...]（已依 track_id 去重）
     """
-    if rng is None:
-        rng = random
-
     pos = 0.0
-    consecutive_miss = 0
     seen_ids = set()
     found = []
 
-    while pos + WINDOW <= duration:
-        chunk = slice_fn(pos, WINDOW)
+    while pos + window <= duration:
+        chunk = slice_fn(pos, window)
         try:
             track = await recognize_fn(chunk)
         except RecognitionBlocked as e:
@@ -68,20 +69,17 @@ async def scan_track(duration, slice_fn, recognize_fn, *, rng=None, on_window=No
             tid = track["track_id"]
             if tid not in seen_ids:
                 seen_ids.add(tid)
-                found.append({
+                song = {
                     "song": track["title"],
                     "artist": track["artist"],
                     "track_id": tid,
-                })
-            pos += rng.uniform(FF_MIN, FF_MAX)   # 命中一律快進
-            consecutive_miss = 0
+                }
+                found.append(song)
+                if on_found is not None:
+                    on_found(pos, song)
+            pos += step_hit    # 命中：不重疊前進
         else:
-            consecutive_miss += 1
-            if consecutive_miss < MAX_MISS:
-                pos += rng.uniform(SLIDE_MIN, SLIDE_MAX)   # 平移重試
-            else:
-                pos += rng.uniform(FF_MIN, FF_MAX)         # 判定無歌，跳過
-                consecutive_miss = 0
+            pos += step_miss   # 沒命中：重疊密掃
 
     return found
 
