@@ -1,20 +1,22 @@
-"""YouTube 播放清單 -> Shazam 辨識 -> 單一 Spotify 清單。
+"""YouTube 長影片 -> Shazam/ACRCloud 辨識 -> 單一 Spotify 清單（整晚安全模式）。
 
-針對 DJ mix / 合輯這類「未標記長影片」：下載音軌 -> 滑動時間窗用 shazamio 辨識 ->
-瀑布流（Spotify -> YT Music -> SoundCloud）確認 -> 命中全部匯進單一 Spotify 清單。
+針對 DJ mix / 合輯這類「未標記長影片」。設計成可以丟幾個 30-50 分鐘的網址跑一整晚：
 
-用法（互動模式為主，免引號免跳脫）：
-    python3 shazam_pipeline.py                 直接跑，跳提示貼網址（網址含 & 也不用引號）
-    python3 shazam_pipeline.py --no-spotify    互動 + 只辨識不寫 Spotify
-    python3 shazam_pipeline.py URL [清單名] [--no-spotify] [--refresh]   給參數（自動化用）
+- 多網址：一次給多個 URL（或互動一行一個），每個可以是單片或 playlist。
+- 安全優先（不被 ban）：保守 pacing（見 recognizer.py），序列不並行；某片被限流時
+  「冷卻一下、跳過該片、繼續下一支」，連續多片都掛才整個放棄。
+- 省 API：辨識引擎只建一次（某引擎額度用完被停用後就不再浪費呼叫它）；命中即快進。
+- 每找到一首立刻 (1) 寫進 tracklist 檔 (2) 加進 Spotify 清單 —— 中途中斷也有成果。
+- 一定留下歌名：找到的當下「先寫檔、再碰 Spotify」，就算 API 到頂或被 ban，
+  tracklist 檔仍保有所有歌名，可手動去找/加。每片辨識完也寫 .shazam-cache checkpoint。
+
+用法：
+    python3 shazam_pipeline.py                         互動：一行一個網址貼，空白 Enter 結束
+    python3 shazam_pipeline.py URL1 URL2 ... [清單名] [--no-spotify] [--refresh]
 
 旗標：
-    --no-spotify   只跑辨識並印結果，完全不碰 Spotify（dry-run，不需登入）
+    --no-spotify   只辨識並寫 tracklist 檔，完全不碰 Spotify（不需登入）
     --refresh      忽略 .shazam-cache 既有 checkpoint，重新辨識
-    --save-list    把完整 tracklist（時間戳 + 歌名 + 狀態）存成 .txt
-
-容錯：每支影片辨識完成即寫 checkpoint；疑似被 Shazam 限流時優雅停止，
-已完成的影片不會白跑，重跑可從 checkpoint 接續。
 """
 
 import asyncio
@@ -37,7 +39,11 @@ from recognizer import (
     ShazamRecognizer,
     scan_track,
 )
+from utils import normalize
 from waterfall import Waterfall
+
+COOLDOWN_SEC = 90            # 某片被限流後，冷卻多久再繼續下一支
+MAX_CONSECUTIVE_BLOCKS = 3   # 連續幾片都被限流才整個放棄
 
 
 def _build_recognizer():
@@ -55,11 +61,23 @@ def _mmss(sec):
     return f"{m:02d}:{s:02d}"
 
 
-class Progress:
-    """單支影片的掃描進度條（純文字，用 \\r 即時更新）。
+def _safe_filename(text):
+    return "".join(c if c not in r'\/:*?"<>|' else "_" for c in text)
 
-    顯示：百分比、已掃秒數/總長、命中數、已做視窗數、估計剩餘視窗、ETA。
-    """
+
+_STATUS_LABEL = {
+    "spotify_direct": "已加入(ACRCloud 直接給 Spotify ID)",
+    "spotify": "已加入",
+    "spotify_via_ytmusic": "已加入(經 YT Music)",
+    "spotify_via_soundcloud": "已加入(經 SoundCloud)",
+    "not_found": "Spotify 無",
+    "recognized": "辨識到(未檢查 Spotify)",
+    "spotify_error": "Spotify 失敗(已記名)",
+}
+
+
+class Progress:
+    """單支影片的掃描進度條（純文字，用 \\r 即時更新）。"""
 
     def __init__(self, duration):
         self.duration = duration or 1.0
@@ -83,65 +101,122 @@ class Progress:
 
     def found(self, pos, song):
         self.hits += 1
-        # 先清掉進度條那行，印出命中（下一次 update 會重畫進度條）
         print(f"\r{' ' * 92}\r    {_mmss(pos)} 命中: {song['song']} - {song['artist']}", flush=True)
 
     def done(self):
-        print()  # 進度條換行收尾
+        print()
 
 
-async def _scan_videos(videos, tmpdir, refresh):
-    """逐片辨識，回傳 (all_found, blocked)。"""
-    all_found = []
-    total = len(videos)
-    for i, v in enumerate(videos, 1):
-        vid, vtitle = v["id"], v["title"]
+class TrackSink:
+    """歸戶器：每找到一首就 (1) 先寫進 tracklist 檔 (2) 再加進 Spotify。
 
-        cached = None if refresh else recognizer.load_checkpoint(vid)
-        if cached is not None:
-            print(f"[{i}/{total}] {vtitle}  [cache] {len(cached)} 首", flush=True)
-            all_found.extend(cached)
-            continue
+    『先寫檔、後 Spotify』+ Spotify 包 try/except，保證就算 API 到頂/被 ban，歌名一定留得下來。
+    跨影片依「正規化 歌名+歌手」去重；累積 results 給最後總結。
+    """
 
-        print(f"[{i}/{total}] {vtitle}  下載中...", flush=True)
-        try:
-            path = audio_source.download_audio(vid, tmpdir)
-        except Exception as e:
-            print(f"  [警告] 下載失敗，跳過: {e}", flush=True)
-            continue
+    def __init__(self, tracklist_path, sp=None, wf=None, playlist_id=None, existing=None):
+        self.path = tracklist_path
+        self.sp = sp
+        self.wf = wf
+        self.playlist_id = playlist_id
+        self.existing = existing if existing is not None else set()
+        self.seen = set()
+        self.results = []
 
-        try:
-            duration = slicer.probe_duration(path)
-            rec = _build_recognizer()
-            prog = Progress(duration)
+    def _append(self, song, status):
+        ts = _mmss(song["pos"]) if song.get("pos") is not None else "--:--"
+        label = _STATUS_LABEL.get(status, status)
+        with open(self.path, "a", encoding="utf-8") as f:   # append + 立即關閉 = 馬上落地
+            f.write(f"{ts}  {song['song']} - {song['artist']}  [{label}]\n")
 
-            def slice_fn(start, dur, _p=path):
-                return slicer.cut(_p, start, dur)
+    def _resolve_and_add(self, song):
+        """回 (status, uri, exists_on)。可能丟例外（由 handle 接住，確保歌名已先寫檔）。"""
+        if song.get("spotify_uri"):
+            uri, status, exists_on = song["spotify_uri"], "spotify_direct", []
+        else:
+            res = self.wf.search(song["song"], song["artist"])
+            uri, status, exists_on = res["uri"], res["status"], res["exists_on"]
+        if uri and uri not in self.existing:
+            spotify_client.add_uris(self.sp, self.playlist_id, [uri])
+            self.existing.add(uri)
+        return status, uri, exists_on
 
-            found = await scan_track(
-                duration, slice_fn, rec.recognize,
-                on_window=prog.update, on_found=prog.found,
-            )
-            prog.done()
-        except RecognitionBlocked as e:
-            print(f"  [中止] 辨識連續失敗，停止本次（本片暫得 {len(e.partial)} 首，不快取）", flush=True)
-            if e.reason:
-                print(f"         真實錯誤: {e.reason}（疑似限流或網路問題，稍等幾分鐘再重跑）", flush=True)
-            all_found.extend(e.partial)
-            _safe_unlink(path)
-            return all_found, True
-        except slicer.FfmpegError as e:
-            print(f"  [警告] 切片失敗，跳過: {e}", flush=True)
-            _safe_unlink(path)
-            continue
-        finally:
-            _safe_unlink(path)
+    def handle(self, song):
+        key = (normalize(song["song"]), normalize(song["artist"]))
+        if key in self.seen:
+            return
+        self.seen.add(key)
 
+        status, uri, exists_on = "recognized", None, []
+        if self.sp is not None:
+            try:
+                status, uri, exists_on = self._resolve_and_add(song)
+            except Exception as e:
+                status = "spotify_error"
+                print(f"    [警告] Spotify 步驟失敗（歌名已記）: {e}", flush=True)
+
+        self._append(song, status)   # 一定會寫到歌名
+        self.results.append({"song": song["song"], "artist": song["artist"],
+                             "pos": song.get("pos"), "status": status,
+                             "uri": uri, "exists_on": exists_on})
+
+    @property
+    def added(self):
+        return sum(1 for r in self.results if r["uri"])
+
+
+def _reset_engines(rec):
+    """冷卻後讓所有引擎重新啟用，給被限流的引擎再一次機會。"""
+    for eng in rec.engines:
+        eng._disabled = False
+        eng._consecutive_fail = 0
+
+
+async def _process_video(i, total, v, rec, sink, tmpdir, refresh):
+    """處理單支：回 'ok' / 'skip' / 'blocked'。已找到的歌即時進 sink。"""
+    vid, vtitle = v["id"], v["title"]
+
+    cached = None if refresh else recognizer.load_checkpoint(vid)
+    if cached is not None:
+        print(f"[{i}/{total}] {vtitle}  [cache] {len(cached)} 首", flush=True)
+        for s in cached:
+            sink.handle(s)
+        return "ok"
+
+    print(f"[{i}/{total}] {vtitle}  下載中...", flush=True)
+    try:
+        path = audio_source.download_audio(vid, tmpdir)
+    except Exception as e:
+        print(f"  [警告] 下載失敗，跳過: {e}", flush=True)
+        return "skip"
+
+    try:
+        duration = slicer.probe_duration(path)
+        prog = Progress(duration)
+
+        def slice_fn(start, dur, _p=path):
+            return slicer.cut(_p, start, dur)
+
+        def on_found(pos, song):
+            prog.found(pos, song)
+            sink.handle(song)     # 找到當下即時：寫檔 + 進 Spotify
+
+        found = await scan_track(duration, slice_fn, rec.recognize,
+                                 on_window=prog.update, on_found=on_found)
+        prog.done()
         recognizer.save_checkpoint(vid, found)
-        all_found.extend(found)
-        print(f"  影片 [{vtitle}] 辨識出 {len(found)} 首歌曲", flush=True)
-
-    return all_found, False
+        print(f"  影片 [{vtitle}] 辨識出 {len(found)} 首", flush=True)
+        return "ok"
+    except RecognitionBlocked as e:
+        print(f"\n  [限流] {vtitle} 連續失敗，先跳過這支（已找到的歌都已記錄/加入）", flush=True)
+        if e.reason:
+            print(f"         真實錯誤: {e.reason}", flush=True)
+        return "blocked"
+    except slicer.FfmpegError as e:
+        print(f"  [警告] 切片失敗，跳過: {e}", flush=True)
+        return "skip"
+    finally:
+        _safe_unlink(path)
 
 
 def _safe_unlink(path):
@@ -151,166 +226,108 @@ def _safe_unlink(path):
         pass
 
 
-def _dedup(all_found):
-    """跨影片去重：優先用 track_id，沒有才用 song+artist 文字。"""
-    seen = set()
-    songs = []
-    for f in all_found:
-        key = f.get("track_id") or (f["song"].lower(), f["artist"].lower())
-        if key in seen:
-            continue
-        seen.add(key)
-        songs.append(f)
-    return songs
-
-
-_STATUS_LABEL = {
-    "spotify_direct": "已加入(ACRCloud 直接給 Spotify ID)",
-    "spotify": "已加入",
-    "spotify_via_ytmusic": "已加入(經 YT Music)",
-    "spotify_via_soundcloud": "已加入(經 SoundCloud)",
-    "not_found": "Spotify 無",
-}
-
-
-def _waterfall_resolve(sp, songs):
-    """逐首跑瀑布流，回傳每首的完整結果 dict 清單（含 status/uri/exists_on）。"""
-    wf = Waterfall(sp)
-    results = []
-    print("\n瀑布流搜尋中（Spotify -> YT Music -> SoundCloud）...", flush=True)
-    for s in songs:
-        if s.get("spotify_uri"):
-            # ACRCloud 已直接給 Spotify ID，不必再搜尋
-            res = {"song": s["song"], "artist": s["artist"], "uri": s["spotify_uri"],
-                   "status": "spotify_direct", "exists_on": []}
-        else:
-            res = wf.search(s["song"], s["artist"])
-        res["pos"] = s.get("pos")
-        results.append(res)
-        if res["uri"]:
-            print(f"  [{_STATUS_LABEL[res['status']]}] {s['song']} - {s['artist']}", flush=True)
-        else:
-            extra = f"（其他平台有: {', '.join(res['exists_on'])}）" if res["exists_on"] else ""
-            print(f"  [找不到] {s['song']} - {s['artist']} {extra}", flush=True)
-    return results
-
-
-def _save_tracklist(title, rows):
-    """把完整 tracklist 存成檔案：時間戳 + 歌名 + 狀態。rows 為 song dict 或 waterfall result。"""
-    safe = "".join(c if c not in r'\/:*?"<>|' else "_" for c in title)
-    today = datetime.date.today().strftime("%Y-%m-%d")
-    path = f"./{today}_{safe}_tracklist.txt"
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(f"# {title}（共 {len(rows)} 首）\n\n")
-        for r in rows:
-            pos = r.get("pos")
-            ts = _mmss(pos) if pos is not None else "--:--"
-            status = r.get("status")
-            tag = f"  [{_STATUS_LABEL.get(status, status)}]" if status else ""
-            f.write(f"{ts}  {r['song']} - {r['artist']}{tag}\n")
-    print(f"\n已存 tracklist: {path}", flush=True)
-
-
 def _print_final_list(results):
-    """結尾完整印出所有辨識到的歌 + 各自的歸戶狀態。"""
     print(f"\n{'=' * 50}")
     print(f"全部辨識到的歌（共 {len(results)} 首）")
     print(f"{'=' * 50}")
     for i, r in enumerate(results, 1):
-        tag = _STATUS_LABEL[r["status"]]
+        tag = _STATUS_LABEL.get(r["status"], r["status"])
         if r["status"] == "not_found" and r["exists_on"]:
             tag += f"，其他平台有: {', '.join(r['exists_on'])}"
         print(f"{i:>3}. {r['song']} - {r['artist']}  [{tag}]")
 
 
-def _write_playlist(sp, playlist_name, uris):
-    user_id = sp.me()["id"]
-    print(f"\n登入成功，Spotify 帳號: {user_id}")
-    playlist = spotify_client.find_or_create_playlist(sp, user_id, playlist_name)
-    playlist_id = playlist["id"]
-    existing = spotify_client.existing_track_uris(sp, playlist_id)
-    new = [u for u in uris if u not in existing]
-    print(f"  播放清單已有 {len(existing)} 首；本次新增 {len(new)} 首（{len(uris) - len(new)} 首已存在）")
-    if new:
-        spotify_client.add_uris(sp, playlist_id, new)
-    print(f"連結: {playlist['external_urls']['spotify']}")
-
-
-async def main():
+def _parse_args():
     flags = {"--no-spotify", "--refresh", "--save-list"}
     args = [a for a in sys.argv[1:] if a not in flags]
     no_spotify = "--no-spotify" in sys.argv
     refresh = "--refresh" in sys.argv
-    save_list = "--save-list" in sys.argv
 
-    if args:
-        url = args[0]
-        name_arg = args[1] if len(args) > 1 else None
-    else:
-        # 互動模式：直接貼網址，免引號免跳脫（網址裡的 & 與空白都 OK）
-        url = input("貼上 YouTube 播放清單或影片網址: ").strip()
-        if not url:
-            print("沒有輸入網址，結束。")
-            return
-        name_arg = input("Spotify 播放清單名稱（直接 Enter = 用影片標題）: ").strip() or None
+    urls = [a for a in args if a.startswith("http")]
+    names = [a for a in args if not a.startswith("http")]
+    name_arg = names[0] if names else None
 
-    print(f"=== 解析 YouTube 來源 ==={' (--refresh)' if refresh else ''}")
-    playlist_title, videos = audio_source.parse_playlist(url)
+    if not urls:
+        print("貼上 YouTube 網址（可多個，一行一個，空白 Enter 結束）：")
+        while True:
+            u = input(">>> ").strip()
+            if not u:
+                break
+            urls.append(u)
+        if urls:
+            name_arg = input("Spotify 清單名稱（Enter = 用第一支標題）: ").strip() or None
+    return urls, name_arg, no_spotify, refresh
+
+
+async def main():
+    urls, name_arg, no_spotify, refresh = _parse_args()
+    if not urls:
+        print("沒有輸入網址，結束。")
+        return
+
+    print(f"=== 解析 {len(urls)} 個來源 ==={' (--refresh)' if refresh else ''}")
+    videos, first_title = [], None
+    for url in urls:
+        title, vids = audio_source.parse_playlist(url)
+        first_title = first_title or title
+        videos.extend(vids)
     if not videos:
         print("沒有解析到任何影片，結束。")
         return
-    print(f"來源: {playlist_title}（{len(videos)} 部影片）\n")
+    playlist_name = name_arg or first_title or "Shazam Import"
+    print(f"共 {len(videos)} 部影片 -> 清單「{playlist_name}」\n")
+
+    # tracklist 檔一定建立、增量寫（最重要的安全網）
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    tracklist_path = f"./{today}_{_safe_filename(playlist_name)}_tracklist.txt"
+    with open(tracklist_path, "w", encoding="utf-8") as f:
+        f.write(f"# {playlist_name}  ({today})\n\n")
+    print(f"tracklist（即時寫入）: {tracklist_path}", flush=True)
+
+    # Spotify 一次設定好（建清單、抓已存在 URI）
+    sp = wf = playlist_id = None
+    existing = set()
+    if not no_spotify:
+        sp = spotify_client.get_client()
+        user_id = sp.me()["id"]
+        print(f"Spotify 帳號: {user_id}", flush=True)
+        playlist = spotify_client.find_or_create_playlist(sp, user_id, playlist_name)
+        playlist_id = playlist["id"]
+        existing = spotify_client.existing_track_uris(sp, playlist_id)
+        wf = Waterfall(sp)
+        print(f"清單連結: {playlist['external_urls']['spotify']}\n", flush=True)
+
+    sink = TrackSink(tracklist_path, sp, wf, playlist_id, existing)
+    rec = _build_recognizer()      # 只建一次（省 API：被停用的引擎不再被呼叫）
 
     tmpdir = tempfile.mkdtemp(prefix="shazam_")
+    consecutive_blocks = 0
     try:
-        all_found, blocked = await _scan_videos(videos, tmpdir, refresh)
+        for i, v in enumerate(videos, 1):
+            outcome = await _process_video(i, len(videos), v, rec, sink, tmpdir, refresh)
+            if outcome == "blocked":
+                consecutive_blocks += 1
+                if consecutive_blocks >= MAX_CONSECUTIVE_BLOCKS:
+                    print(f"\n連續 {consecutive_blocks} 支被限流，先停。已找到的都已存檔/加入清單；"
+                          f"稍後重跑會跳過已完成的影片。", flush=True)
+                    break
+                print(f"  冷卻 {COOLDOWN_SEC} 秒後繼續下一支...", flush=True)
+                await asyncio.sleep(COOLDOWN_SEC)
+                _reset_engines(rec)
+            else:
+                consecutive_blocks = 0
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
-    songs = _dedup(all_found)
-    print(f"\n{'=' * 50}")
-    print(f"辨識結果（去重後共 {len(songs)} 首）{'  [因連續失敗提早停止]' if blocked else ''}")
-    print(f"{'=' * 50}")
-    for i, s in enumerate(songs, 1):
-        print(f"{i}. {s['song']} - {s['artist']}")
-
-    if not songs:
-        print("\n沒有辨識出任何歌曲，結束。")
-        return
-
-    if no_spotify:
-        if save_list:
-            _save_tracklist(name_arg or playlist_title, songs)
-        print(f"\n[dry-run] --no-spotify：只辨識，完全不碰 Spotify（共 {len(songs)} 首）。")
-        return
-
-    # 瀑布流需要 Spotify 搜尋（唯讀），故需登入（token 存 .cache）
-    sp = spotify_client.get_client()
-    results = _waterfall_resolve(sp, songs)
-
-    uris = []
-    for r in results:
-        if r["uri"] and r["uri"] not in uris:
-            uris.append(r["uri"])
-    not_found = [r for r in results if not r["uri"]]
-
-    playlist_name = name_arg or playlist_title
-    print(f"\n{'=' * 50}")
-    print(f"寫入 Spotify 播放清單: {playlist_name}")
-    print(f"{'=' * 50}")
-    _write_playlist(sp, playlist_name, uris)
-
-    # 結尾：完整列出所有辨識到的歌 + 狀態
-    _print_final_list(results)
-    if save_list:
-        _save_tracklist(playlist_name, results)
-
+    _print_final_list(sink.results)
     print(f"\n=== 完成 ===")
-    print(f"加入清單: {len(uris)} 首 / Spotify 找不到: {len(not_found)} 首")
+    print(f"辨識到 {len(sink.results)} 首；加入 Spotify {sink.added} 首"
+          f"{'（--no-spotify，只記名）' if no_spotify else ''}")
+    print(f"tracklist: {tracklist_path}")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-    sys.stdout.flush()   # os._exit 不會 flush，先手動沖掉緩衝（被導向管線時尤其重要）
+    sys.stdout.flush()
     sys.stderr.flush()
-    os._exit(0)  # 強制結束，清掉 yt-dlp 的 thread pool（沿用 yt-to-mp3.py 做法）
+    os._exit(0)   # 強制結束，清掉 yt-dlp 的 thread pool

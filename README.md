@@ -62,19 +62,27 @@ python3 shazam_pipeline.py --no-spotify
 第一次要寫清單時會開瀏覽器要求 Spotify 登入授權，授權後 token 會存在 `.cache`，之後不再詢問。
 帳號設定在 `config.py`（Client ID / Secret / Redirect URI）。
 
-### 進階：直接帶參數（自動化用）
+### 進階：帶參數 / 多網址 / 跑整晚
 
-網址當參數傳時，因為網址含 `&`，**要用引號包住**（不然 shell 會把 `&` 當成丟到背景）：
+可一次給**多個網址**（每個可以是單片或 playlist），互動模式則一行貼一個。網址含 `&` 時要用引號：
 
 ```bash
-python3 shazam_pipeline.py "https://www.youtube.com/playlist?list=PLxxxx" "Weekender 2026"
-python3 shazam_pipeline.py "https://www.youtube.com/watch?v=5NV6Rdv1a3I" "我的清單" --refresh
+python3 shazam_pipeline.py "<url1>" "<url2>" "<url3>" "我的清單"
 ```
 
 | 旗標 | 作用 |
 |---|---|
-| `--no-spotify` | 只辨識並印結果，完全不碰 Spotify（dry-run，不需登入） |
+| `--no-spotify` | 只辨識並寫 tracklist 檔，完全不碰 Spotify（不需登入） |
 | `--refresh` | 忽略 `.shazam-cache` 既有 checkpoint，重新辨識 |
+
+**整晚安全模式（預設行為）**：丟幾支 30–50 分鐘的長片跑一整晚很適合。設計成：
+- **保守 pacing、序列不並行** —— 以不被限流/ban 為優先（速度慢沒關係）。
+- **每找到一首就立刻**：先寫進 tracklist 檔，再加進 Spotify 清單 —— 中途中斷也有成果。
+- **一定留下歌名**：先寫檔再碰 Spotify，就算 API 到頂/被 ban，tracklist 檔仍保有所有歌名（可手動找/加）。tracklist 檔**一律產生**，即時寫入：`./YYYY-MM-DD_<清單名>_tracklist.txt`。
+- **被限流不會整批中止**：該片冷卻 90 秒後跳過、繼續下一支；連續 3 片都掛才停。
+- **省 API**：辨識引擎只建一次（額度用完被停用的引擎不再被呼叫）；每片辨識完寫 checkpoint，重跑跳過已完成的。
+
+建議搭配 `nohup python3 shazam_pipeline.py ... &` 或 tmux，關終端機也不會斷。先確保**已登入過一次 Spotify**（token 存 `.cache`，之後自動 refresh，整晚不會卡登入）。
 
 ### 運作方式
 

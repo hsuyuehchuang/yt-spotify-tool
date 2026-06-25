@@ -27,11 +27,11 @@ WINDOW = 12.0     # 每個取樣窗大小（秒）—— Shazam / ACRCloud 一�
 STEP_MISS = 6.0   # 沒命中 → 前進這麼多（重疊 50% 密掃，避免漏掉沒命中的段落）
 STEP_HIT = 12.0   # 命中 → 前進這麼多（不重疊；剛辨識過的整段不必再掃，提速）
 
-# --- 容錯參數（每個引擎共用）---
-REQUEST_DELAY_MIN = 1.0  # 每次請求間的禮貌間隔（避免連發誘發限流）
-REQUEST_DELAY_MAX = 2.5
+# --- 容錯參數（每個引擎共用）。偏保守：寧可慢，重點是不要被限流/ban ---
+REQUEST_DELAY_MIN = 2.0  # 每次請求間的禮貌間隔（避免連發誘發限流）
+REQUEST_DELAY_MAX = 4.0
 RETRY_ATTEMPTS = 3       # 單一窗口的重試次數
-RETRY_BASE_DELAY = 2.0   # 指數退避基底：2, 4, 8 秒
+RETRY_BASE_DELAY = 3.0   # 指數退避基底：3, 6, 12 秒（給限流足夠冷卻）
 BLOCK_THRESHOLD = 4      # 連續幾個窗口「重試全敗」才放棄該引擎
 
 
