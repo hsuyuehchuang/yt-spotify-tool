@@ -19,8 +19,9 @@ import os
 import glob
 import time
 import random
-import datetime
 import yt_dlp
+
+from utils import make_output_dir
 
 DELAY_MIN = 1.5
 DELAY_MAX = 4.0
@@ -28,13 +29,6 @@ DELAY_MAX = 4.0
 
 def safe_filename(text: str) -> str:
     return "".join(c if c not in r'\/:*?"<>|' else "_" for c in text)
-
-
-def make_output_dir(name: str) -> str:
-    today = datetime.date.today().strftime("%Y-%m-%d")
-    path = f"./{today}_{safe_filename(name)}"
-    os.makedirs(path, exist_ok=True)
-    return path
 
 
 def _validate_url(url: str) -> str | None:
@@ -126,7 +120,7 @@ def download_one(url: str, output_dir: str):
 
 
 def main():
-    output_dir = make_output_dir("QuickDownload")
+    output_dir = make_output_dir()
     print(f"下載資料夾: {output_dir}")
 
     # 命令列直接給 URL → 下載完就結束

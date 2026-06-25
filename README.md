@@ -188,11 +188,11 @@ python spotify-to-mp3.py "https://open.spotify.com/playlist/2b1UMpzBx73UmYn4D8Xc
 ```
 === 讀取 Spotify 播放清單 ===
 播放清單: Weekender 2026
-下載資料夾: ./2026-05-08_Weekender 2026
+下載資料夾: ./2026-05-08
 共 21 首歌
 
 [1/21] Extra, Extra!! - Paula Perry
-    [完成] ./2026-05-08_Weekender 2026/Extra, Extra!! - Paula Perry.mp3
+    [完成] ./2026-05-08/Extra, Extra!! - Paula Perry.mp3
 [2/21] It'z a Rap - Phat Kat
     [找不到 YouTube 對應歌曲]
 ...
@@ -204,7 +204,7 @@ python spotify-to-mp3.py "https://open.spotify.com/playlist/2b1UMpzBx73UmYn4D8Xc
 
 **注意：**
 - 不帶參數 → 互動模式（貼一個下一個，免引號）
-- 下載資料夾預設 `YYYY-MM-DD_播放清單名稱`；可用第二個參數指定資料夾
+- 下載資料夾統一為當天日期 `YYYY-MM-DD`（所有下載 script 共用同一個，不每次開新資料夾）；可用第二個參數指定別的資料夾
 - 檔名格式：`歌名 - Artist.mp3`
 - 搜尋優先 YouTube Music Topic 頻道，找不到才做一般搜尋，兩輪都要過 title + artist + 時長比對
 - 已存在的 MP3 自動跳過，重跑安全
@@ -277,7 +277,7 @@ python yt-to-mp3.py download "https://www.youtube.com/watch?v=xxx&list=PLxxx"
 
 **輸出：**
 ```
-下載資料夾: ./2026-05-08_Playlist Title
+下載資料夾: ./2026-05-08
 
 [1/20] 影片標題
   影片標題  87%
@@ -292,7 +292,7 @@ python yt-to-mp3.py download "https://www.youtube.com/watch?v=xxx&list=PLxxx"
 
 **注意（scrape / download 共用）：**
 - 不帶參數 → 互動模式（先選模式，再貼一個跑一個）
-- 下載資料夾自動命名：`YYYY-MM-DD_Playlist名稱` 或 `YYYY-MM-DD_影片標題`
+- 下載資料夾統一為當天日期 `YYYY-MM-DD`（所有下載 script 共用同一個，不每次開新資料夾）
 - 已存在的 MP3 自動跳過，重跑安全
 - 封面（YouTube thumbnail）自動嵌入 MP3，並寫入 artist / album / title 等 metadata
 - 音質：`bestaudio/best` + MP3 VBR 最高品質
@@ -339,7 +339,7 @@ alias bc='cd ~/Desktop/vscode/github/yt-spotify-tool && python3 bandcamp-to-mp3.
 之後輸入 `bc` 就直接進互動模式。
 
 **注意：**
-- 下載資料夾固定為 `YYYY-MM-DD_QuickDownload`，Bandcamp 和 YouTube 都進同個資料夾
+- 下載資料夾統一為當天日期 `YYYY-MM-DD`（所有下載 script 共用同一個，不每次開新資料夾）
 - 檔名格式：`歌名 - Artist.mp3`
 - 已存在的 MP3 自動跳過
 - YouTube 帶 `list=` 或 `/playlist` 的 URL 會被擋下，要求改用 `yt-to-mp3.py`

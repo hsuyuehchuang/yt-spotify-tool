@@ -16,14 +16,13 @@ import os
 import glob
 import time
 import random
-import datetime
 import requests
 import yt_dlp
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, TIT2, TPE1, TALB, APIC, ID3NoHeaderError
-from utils import word_overlap, title_matches, artist_matches, print_summary
+from utils import word_overlap, title_matches, artist_matches, print_summary, make_output_dir
 
 SPOTIFY_CLIENT_ID = "9e989e6f2e034ca695d116607ec0cca6"
 SPOTIFY_CLIENT_SECRET = "35a77882d91343a7a45fb507e1bd82fc"
@@ -170,12 +169,7 @@ def download_playlist(playlist_url: str, output_base: str | None = None):
     print("=== 讀取 Spotify 播放清單 ===")
     playlist_name, tracks = get_spotify_tracks(playlist_url)
 
-    if output_base:
-        output_dir = output_base
-    else:
-        today = datetime.date.today().strftime("%Y-%m-%d")
-        safe_playlist_name = "".join(c if c not in r'\/:*?"<>|' else "_" for c in playlist_name)
-        output_dir = f"./{today}_{safe_playlist_name}"
+    output_dir = output_base or make_output_dir()
     os.makedirs(output_dir, exist_ok=True)
 
     print(f"播放清單: {playlist_name}")

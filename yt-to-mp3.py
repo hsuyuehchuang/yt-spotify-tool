@@ -18,12 +18,11 @@ import re
 import glob
 import time
 import random
-import datetime
 import urllib.request
 import urllib.parse
 import json
 import yt_dlp
-from utils import title_matches, artist_matches, print_summary
+from utils import title_matches, artist_matches, print_summary, make_output_dir
 
 DELAY_MIN = 1.5
 DELAY_MAX = 4.0
@@ -67,13 +66,6 @@ def download_as_mp3(video_url: str, output_path: str) -> bool:
 
 def safe_filename(text: str) -> str:
     return "".join(c if c not in r'\/:*?"<>|' else "_" for c in text)
-
-
-def make_output_dir(name: str) -> str:
-    today = datetime.date.today().strftime("%Y-%m-%d")
-    path = f"./{today}_{safe_filename(name)}"
-    os.makedirs(path, exist_ok=True)
-    return path
 
 
 # ──────────────────────────────────────────────
@@ -196,7 +188,7 @@ def mode_scrape(yt_url: str):
     videos = info.get("entries") or [info]
     total = len(videos)
 
-    output_dir = make_output_dir(playlist_title)
+    output_dir = make_output_dir()
     print(f"播放清單: {playlist_title}")
     print(f"下載資料夾: {output_dir}\n")
 
@@ -274,8 +266,7 @@ def mode_download(yt_url: str):
     with yt_dlp.YoutubeDL(ydl_info_opts) as ydl:
         info = ydl.extract_info(yt_url, download=False)
 
-    folder_name = info.get("title") or info.get("id") or "download"
-    output_dir = make_output_dir(folder_name)
+    output_dir = make_output_dir()
     print(f"下載資料夾: {output_dir}\n")
 
     videos = info.get("entries") or [info]
