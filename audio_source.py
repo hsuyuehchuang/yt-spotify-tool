@@ -5,10 +5,61 @@
 切片交給 slicer.cut 處理。
 """
 
+import json
 import os
+import re
 import urllib.parse
+import urllib.request
 
 import yt_dlp
+
+_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+
+def fetch_youtube_cards(video_id: str) -> list[dict]:
+    """免費抓 YouTube 影片自帶的「音樂」卡片（YouTube 已認出的歌），回 [{'song','artist','album'}]。
+
+    走一個一般 HTTP 請求解析 ytInitialData，不需 API、無 rate limit。battle / DJ 影片常常
+    有 8-10 首卡片（Shazam 在混音裡反而抓不到），等於免費多撈、不耗 Shazam/ACRCloud 額度。
+    """
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    req = urllib.request.Request(url, headers={"User-Agent": _UA,
+                                               "Accept-Language": "en-US,en;q=0.9"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+    except Exception:
+        return []
+
+    m = re.search(r"var ytInitialData\s*=\s*(\{.+?\});\s*</script>", html, re.DOTALL)
+    if not m:
+        return []
+    try:
+        data = json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return []
+
+    songs = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            if "videoAttributeViewModel" in node:
+                vm = node["videoAttributeViewModel"]
+                title = vm.get("title", "").strip()
+                artist = vm.get("subtitle", "").strip()
+                album = (vm.get("secondarySubtitle") or {}).get("content", "").strip() or None
+                if title:
+                    songs.append({"song": title, "artist": artist or "Unknown", "album": album})
+            else:
+                for v in node.values():
+                    walk(v)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(data)
+    return songs
 
 
 def normalize_url(url: str) -> str:

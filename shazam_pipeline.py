@@ -183,6 +183,14 @@ async def _process_video(i, total, v, rec, sink, tmpdir, refresh, fine=False):
     """處理單支：回 'ok' / 'skip' / 'blocked'。已找到的歌即時進 sink。"""
     vid, vtitle = v["id"], v["title"]
 
+    # 免費先撈 YouTube 自帶的音樂卡片（0 辨識 API；battle/DJ 影片常有 8-10 首 Shazam 漏掉的歌）
+    cards = audio_source.fetch_youtube_cards(vid)
+    if cards:
+        print(f"[{i}/{total}] {vtitle}  YouTube 卡片 {len(cards)} 首（免費）", flush=True)
+        for c in cards:
+            sink.handle({"song": c["song"], "artist": c["artist"],
+                         "pos": None, "spotify_uri": None})
+
     cached = None if refresh else recognizer.load_checkpoint(vid)
     if cached is not None:
         print(f"[{i}/{total}] {vtitle}  [cache] {len(cached)} 首", flush=True)

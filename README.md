@@ -101,7 +101,7 @@ python3 shazam_pipeline.py "<url1>" "<url2>" "<url3>" "我的清單"
 
 ### 運作方式
 
-1. 解析 playlist/影片 → 逐支下載音軌（`yt-dlp`，暫存檔處理完即刪）。
+1. 解析 playlist/影片 → 每支先**免費抓 YouTube 自帶的音樂卡片**（YouTube 已認出的歌，0 辨識 API；battle/DJ 影片常有 8-10 首 Shazam 漏掉的歌，直接收）→ 再下載音軌（`yt-dlp`，暫存檔處理完即刪）。
 2. **自適應掃描（不快轉，整段掃完）**：12 秒窗；沒命中前進 6 秒（重疊密掃，避免漏），命中前進 12 秒（不重疊，提速）。逐段送辨識引擎（預設 Shazam，可選加 ACRCloud），依「歌名+歌手」去重，並顯示即時進度條（百分比 / 已掃秒數 / 命中數 / 剩餘視窗 / ETA）。
 3. **瀑布流**：Spotify 直接搜 → 沒中改用 YT Music / SoundCloud 拿乾淨歌名回頭再搜 Spotify。最終都落地到同一個 Spotify 清單；各平台有但 Spotify 沒有的只記進報告。
 
