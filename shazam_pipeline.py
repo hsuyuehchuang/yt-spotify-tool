@@ -17,6 +17,7 @@
 旗標：
     --no-spotify   只辨識並寫 tracklist 檔，完全不碰 Spotify（不需登入）
     --refresh      忽略 .shazam-cache 既有 checkpoint，重新辨識
+    --coarse       長片/DJ set 用：掃粗（每 30 秒一窗），快好幾倍（每首放很久不會漏）
 """
 
 import asyncio
@@ -172,7 +173,10 @@ def _reset_engines(rec):
         eng._consecutive_fail = 0
 
 
-async def _process_video(i, total, v, rec, sink, tmpdir, refresh):
+COARSE_STEP = 30.0   # --coarse 模式的步長（長片/DJ set 每首放很久，不用密掃）
+
+
+async def _process_video(i, total, v, rec, sink, tmpdir, refresh, coarse=False):
     """處理單支：回 'ok' / 'skip' / 'blocked'。已找到的歌即時進 sink。"""
     vid, vtitle = v["id"], v["title"]
 
@@ -201,7 +205,10 @@ async def _process_video(i, total, v, rec, sink, tmpdir, refresh):
             prog.found(pos, song)
             sink.handle(song)     # 找到當下即時：寫檔 + 進 Spotify
 
+        sm = COARSE_STEP if coarse else recognizer.STEP_MISS
+        sh = COARSE_STEP if coarse else recognizer.STEP_HIT
         found = await scan_track(duration, slice_fn, rec.recognize,
+                                 step_miss=sm, step_hit=sh,
                                  on_window=prog.update, on_found=on_found)
         prog.done()
         recognizer.save_checkpoint(vid, found)
@@ -238,10 +245,11 @@ def _print_final_list(results):
 
 
 def _parse_args():
-    flags = {"--no-spotify", "--refresh", "--save-list"}
+    flags = {"--no-spotify", "--refresh", "--save-list", "--coarse"}
     args = [a for a in sys.argv[1:] if a not in flags]
     no_spotify = "--no-spotify" in sys.argv
     refresh = "--refresh" in sys.argv
+    coarse = "--coarse" in sys.argv
 
     urls = [a for a in args if a.startswith("http")]
     names = [a for a in args if not a.startswith("http")]
@@ -256,11 +264,11 @@ def _parse_args():
             urls.append(u)
         if urls:
             name_arg = input("Spotify 清單名稱（Enter = 用第一支標題）: ").strip() or None
-    return urls, name_arg, no_spotify, refresh
+    return urls, name_arg, no_spotify, refresh, coarse
 
 
 async def main():
-    urls, name_arg, no_spotify, refresh = _parse_args()
+    urls, name_arg, no_spotify, refresh, coarse = _parse_args()
     if not urls:
         print("沒有輸入網址，結束。")
         return
@@ -304,7 +312,7 @@ async def main():
     consecutive_blocks = 0
     try:
         for i, v in enumerate(videos, 1):
-            outcome = await _process_video(i, len(videos), v, rec, sink, tmpdir, refresh)
+            outcome = await _process_video(i, len(videos), v, rec, sink, tmpdir, refresh, coarse)
             if outcome == "blocked":
                 consecutive_blocks += 1
                 if consecutive_blocks >= MAX_CONSECUTIVE_BLOCKS:
