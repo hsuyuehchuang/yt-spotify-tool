@@ -17,7 +17,8 @@
 旗標：
     --no-spotify   只辨識並寫 tracklist 檔，完全不碰 Spotify（不需登入）
     --refresh      忽略 .shazam-cache 既有 checkpoint，重新辨識
-    --coarse       長片/DJ set 用：掃粗（每 30 秒一窗），快好幾倍（每首放很久不會漏）
+    --coarse       強制掃粗（每 30 秒一窗）。預設已會「超過 10 分鐘的影片自動掃粗」，
+                   這個旗標是連短片也強制掃粗。
 """
 
 import asyncio
@@ -173,7 +174,8 @@ def _reset_engines(rec):
         eng._consecutive_fail = 0
 
 
-COARSE_STEP = 30.0   # --coarse 模式的步長（長片/DJ set 每首放很久，不用密掃）
+COARSE_STEP = 30.0      # 掃粗模式的步長（長片/DJ set 每首放很久，不用密掃）
+LONG_VIDEO_SEC = 600    # 超過這個長度（10 分鐘）自動改用掃粗
 
 
 async def _process_video(i, total, v, rec, sink, tmpdir, refresh, coarse=False):
@@ -205,8 +207,11 @@ async def _process_video(i, total, v, rec, sink, tmpdir, refresh, coarse=False):
             prog.found(pos, song)
             sink.handle(song)     # 找到當下即時：寫檔 + 進 Spotify
 
-        sm = COARSE_STEP if coarse else recognizer.STEP_MISS
-        sh = COARSE_STEP if coarse else recognizer.STEP_HIT
+        use_coarse = coarse or duration > LONG_VIDEO_SEC   # 超過 10 分鐘自動掃粗
+        sm = COARSE_STEP if use_coarse else recognizer.STEP_MISS
+        sh = COARSE_STEP if use_coarse else recognizer.STEP_HIT
+        if use_coarse:
+            print(f"  （{_mmss(duration)} 長片，自動掃粗 {int(COARSE_STEP)} 秒/窗）", flush=True)
         found = await scan_track(duration, slice_fn, rec.recognize,
                                  step_miss=sm, step_hit=sh,
                                  on_window=prog.update, on_found=on_found)
