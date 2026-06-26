@@ -128,8 +128,9 @@ class TrackSink:
     def _append(self, song, status):
         ts = _mmss(song["pos"]) if song.get("pos") is not None else "--:--"
         label = _STATUS_LABEL.get(status, status)
+        src = song.get("source") or "?"
         with open(self.path, "a", encoding="utf-8") as f:   # append + 立即關閉 = 馬上落地
-            f.write(f"{ts}  {song['song']} - {song['artist']}  [{label}]\n")
+            f.write(f"{ts}  {song['song']} - {song['artist']}  [{label}]（{src}）\n")
 
     def _resolve_and_add(self, song):
         """回 (status, uri, exists_on)。可能丟例外（由 handle 接住，確保歌名已先寫檔）。"""
@@ -160,7 +161,8 @@ class TrackSink:
         self._append(song, status)   # 一定會寫到歌名
         self.results.append({"song": song["song"], "artist": song["artist"],
                              "pos": song.get("pos"), "status": status,
-                             "uri": uri, "exists_on": exists_on})
+                             "uri": uri, "exists_on": exists_on,
+                             "source": song.get("source")})
 
     @property
     def added(self):
@@ -189,7 +191,7 @@ async def _process_video(i, total, v, rec, sink, tmpdir, refresh, fine=False):
         print(f"[{i}/{total}] {vtitle}  YouTube 卡片 {len(cards)} 首（免費）", flush=True)
         for c in cards:
             sink.handle({"song": c["song"], "artist": c["artist"],
-                         "pos": None, "spotify_uri": None})
+                         "pos": None, "spotify_uri": None, "source": "YouTube卡片"})
 
     cached = None if refresh else recognizer.load_checkpoint(vid)
     if cached is not None:
@@ -255,7 +257,7 @@ def _print_final_list(results):
         tag = _STATUS_LABEL.get(r["status"], r["status"])
         if r["status"] == "not_found" and r["exists_on"]:
             tag += f"，其他平台有: {', '.join(r['exists_on'])}"
-        print(f"{i:>3}. {r['song']} - {r['artist']}  [{tag}]")
+        print(f"{i:>3}. {r['song']} - {r['artist']}  [{tag}]（{r.get('source') or '?'}）")
 
 
 def _parse_args():

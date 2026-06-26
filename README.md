@@ -105,6 +105,8 @@ python3 shazam_pipeline.py "<url1>" "<url2>" "<url3>" "我的清單"
 2. **自適應掃描（不快轉，整段掃完）**：12 秒窗；沒命中前進 6 秒（重疊密掃，避免漏），命中前進 12 秒（不重疊，提速）。逐段送辨識引擎（預設 Shazam，可選加 ACRCloud），依「歌名+歌手」去重，並顯示即時進度條（百分比 / 已掃秒數 / 命中數 / 剩餘視窗 / ETA）。
 3. **瀑布流**：Spotify 直接搜 → 沒中改用 YT Music / SoundCloud 拿乾淨歌名回頭再搜 Spotify。最終都落地到同一個 Spotify 清單；各平台有但 Spotify 沒有的只記進報告。
 
+> 卡片與聲紋掃描**兩邊都會跑**（YouTube Content ID 偶爾會標錯，所以不跳過 Shazam）。每首歌會標**來源**（`YouTube卡片` / `Shazam` / `ACRCloud`）寫在 tracklist 與總結裡；兩邊對不一樣時，你可以自己看來源判斷哪首對。
+
 ### 注意
 
 - `shazamio` 是逆向工程的非官方庫，會遇到限流/暫時封 IP。本管線內建退避重試；連續失敗會**優雅停止並保留進度**（每支影片辨識完即寫 `.shazam-cache/<video_id>.json`，重跑可接續）。

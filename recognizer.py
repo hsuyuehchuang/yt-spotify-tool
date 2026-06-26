@@ -83,6 +83,7 @@ async def scan_track(duration, slice_fn, recognize_fn, *, step_miss=STEP_MISS,
                     "track_id": track.get("track_id"),
                     "spotify_uri": track.get("spotify_uri"),
                     "pos": round(pos, 1),   # 命中的時間位置（秒），給 tracklist 時間戳用
+                    "source": track.get("source", "Shazam"),
                 }
                 found.append(song)
                 if on_found is not None:
@@ -135,7 +136,10 @@ class _RetryingEngine:
                 continue
             else:
                 self._consecutive_fail = 0   # 只要呼叫成功就重置
-                return self._parse(out)
+                res = self._parse(out)
+                if res is not None:
+                    res["source"] = self.name   # 標來源：Shazam / ACRCloud
+                return res
 
         # 這個窗口重試全敗（多半是網路/限流）—— 把真實錯誤印出來，不要藏
         self._consecutive_fail += 1
