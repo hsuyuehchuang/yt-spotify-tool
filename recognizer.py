@@ -33,6 +33,7 @@ REQUEST_DELAY_MAX = 4.0
 RETRY_ATTEMPTS = 3       # 單一窗口的重試次數
 RETRY_BASE_DELAY = 3.0   # 指數退避基底：3, 6, 12 秒（給限流足夠冷卻）
 BLOCK_THRESHOLD = 4      # 連續幾個窗口「重試全敗」才放棄該引擎
+CALL_TIMEOUT = 20.0      # 單次辨識呼叫的整體逾時（秒）—— 防止某個請求卡死整條管線
 
 
 class RecognitionBlocked(Exception):
@@ -126,9 +127,10 @@ class _RetryingEngine:
         last_err = ""
         for attempt in range(self.attempts):
             try:
-                out = await self._call(data)
+                out = await asyncio.wait_for(self._call(data), timeout=CALL_TIMEOUT)
             except Exception as e:
-                last_err = f"{type(e).__name__}: {e}"
+                # 包含逾時（asyncio.TimeoutError）——當作這次失敗，不讓它無限卡住
+                last_err = f"{type(e).__name__}: {e}" if str(e) else f"{type(e).__name__}（逾時）"
                 await asyncio.sleep(self.base_delay * (2 ** attempt))
                 continue
             else:
@@ -216,7 +218,7 @@ class ACRCloudEngine(_RetryingEngine):
                 "sample_bytes": str(len(data)),
                 "timestamp": ts,
             },
-            timeout=20,
+            timeout=12,
         )
         resp.raise_for_status()
         return resp.json()
