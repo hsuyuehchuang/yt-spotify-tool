@@ -25,6 +25,8 @@ def detect_platform(url: str) -> str | None:
         return "spotify"
     if "bandcamp.com" in u:
         return "bandcamp"
+    if "soundcloud.com" in u:
+        return "soundcloud"
     if "youtube.com" in u or "youtu.be" in u:
         return "youtube"
     return None
@@ -51,6 +53,8 @@ def build_command(url: str, yt_choice: str | None = None, playlist_name: str | N
         return ["python3", _script("spotify-to-mp3.py"), url]
     if plat == "bandcamp":
         return ["python3", _script("bandcamp-to-mp3.py"), url]
+    if plat == "soundcloud":
+        return ["python3", _script("soundcloud-to-mp3.py"), url]
     if plat == "youtube":
         action = _YT_ACTIONS.get(yt_choice or "1")
         if not action:
@@ -80,7 +84,7 @@ def _ask_youtube(url: str):
 def run_one(url: str):
     plat = detect_platform(url)
     if plat is None:
-        print(f"[跳過] 認不出這是哪個平台（支援 Spotify / YouTube / Bandcamp）: {url}")
+        print(f"[跳過] 認不出這是哪個平台（支援 Spotify / YouTube / Bandcamp / SoundCloud）: {url}")
         return
     cmd = _ask_youtube(url) if plat == "youtube" else build_command(url)
     if not cmd:
@@ -96,7 +100,7 @@ def main():
             run_one(url)
         return
 
-    print("統一入口：貼上 Spotify / YouTube / Bandcamp 網址（空白 Enter 或 Ctrl+C 結束）")
+    print("統一入口：貼上 Spotify / YouTube / Bandcamp / SoundCloud 網址（空白 Enter 或 Ctrl+C 結束）")
     try:
         while True:
             url = input("\n>>> ").strip()
