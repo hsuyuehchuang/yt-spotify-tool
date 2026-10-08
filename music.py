@@ -50,17 +50,17 @@ def build_command(url: str, yt_choice: str | None = None, playlist_name: str | N
     """純函式：依平台 / YouTube 選項組出要執行的指令 list；無法判斷回 None。"""
     plat = detect_platform(url)
     if plat == "spotify":
-        return ["python3", _script("spotify-to-mp3.py"), url]
+        return [sys.executable, _script("spotify-to-mp3.py"), url]
     if plat == "bandcamp":
-        return ["python3", _script("bandcamp-to-mp3.py"), url]
+        return [sys.executable, _script("bandcamp-to-mp3.py"), url]
     if plat == "soundcloud":
-        return ["python3", _script("soundcloud-to-mp3.py"), url]
+        return [sys.executable, _script("soundcloud-to-mp3.py"), url]
     if plat == "youtube":
         action = _YT_ACTIONS.get(yt_choice or "1")
         if not action:
             return None
         _, script, prefix = action
-        cmd = ["python3", _script(script), *prefix, url]
+        cmd = [sys.executable, _script(script), *prefix, url]
         if yt_choice in _YT_WANTS_NAME and playlist_name:
             cmd.append(playlist_name)
         return cmd

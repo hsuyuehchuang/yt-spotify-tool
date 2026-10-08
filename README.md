@@ -2,6 +2,16 @@
 
 ## 快速查閱
 
+首次使用先完成下方「環境需求」的安裝。每次開新終端機，請在專案目錄啟用虛擬環境：
+
+```bash
+source .venv/bin/activate
+```
+
+也可以直接執行 `.venv/bin/python music.py`，不需先啟用環境；統一入口會沿用同一個 Python 執行各平台的子程式。
+
+所有平台下載的 MP3 預設儲存在 `~/Music/YYYY-MM-DD/`，依當天日期共用資料夾；Bandcamp 專輯連結會再建立專輯名稱子資料夾。目錄不存在時會自動建立，不受啟動位置影響。
+
 ``` bash
 python3 music.py                  # 統一入口：貼任意網址自動分流（Spotify/YouTube/Bandcamp，推薦）
 python3 shazam_pipeline.py        # 長影片/混音 → Shazam 聲紋辨識 → Spotify（互動模式，直接貼網址）
@@ -213,7 +223,7 @@ python spotify-to-mp3.py "https://open.spotify.com/playlist/2b1UMpzBx73UmYn4D8Xc
 ```
 === 讀取 Spotify 播放清單 ===
 播放清單: Weekender 2026
-下載資料夾: ./2026-05-08
+下載資料夾: ~/Music/2026-05-08
 共 21 首歌
 
 [1/21] Extra, Extra!! - Paula Perry
@@ -229,7 +239,7 @@ python spotify-to-mp3.py "https://open.spotify.com/playlist/2b1UMpzBx73UmYn4D8Xc
 
 **注意：**
 - 不帶參數 → 互動模式（貼一個下一個，免引號）
-- 下載資料夾統一為當天日期 `YYYY-MM-DD`（所有下載 script 共用同一個，不每次開新資料夾）；可用第二個參數指定別的資料夾
+- 下載資料夾預設為 `~/Music/YYYY-MM-DD`（使用者家目錄下的 Music，Linux / macOS 通用）（所有下載 script 共用同一個，不每次開新資料夾）；可用第二個參數指定別的資料夾
 - 檔名格式：`歌名 - Artist.mp3`
 - 搜尋優先 YouTube Music Topic 頻道，找不到才做一般搜尋，兩輪都要過 title + artist + 時長比對
 - 已存在的 MP3 自動跳過，重跑安全
@@ -302,7 +312,7 @@ python yt-to-mp3.py download "https://www.youtube.com/watch?v=xxx&list=PLxxx"
 
 **輸出：**
 ```
-下載資料夾: ./2026-05-08
+下載資料夾: ~/Music/2026-05-08
 
 [1/20] 影片標題
   影片標題  87%
@@ -317,7 +327,7 @@ python yt-to-mp3.py download "https://www.youtube.com/watch?v=xxx&list=PLxxx"
 
 **注意（scrape / download 共用）：**
 - 不帶參數 → 互動模式（先選模式，再貼一個跑一個）
-- 下載資料夾統一為當天日期 `YYYY-MM-DD`（所有下載 script 共用同一個，不每次開新資料夾）
+- 下載資料夾預設為 `~/Music/YYYY-MM-DD`（使用者家目錄下的 Music，Linux / macOS 通用）（所有下載 script 共用同一個，不每次開新資料夾）
 - 已存在的 MP3 自動跳過，重跑安全
 - 封面（YouTube thumbnail）自動嵌入 MP3，並寫入 artist / album / title 等 metadata
 - 音質：`bestaudio/best` + MP3 VBR 最高品質
@@ -328,6 +338,8 @@ python yt-to-mp3.py download "https://www.youtube.com/watch?v=xxx&list=PLxxx"
 ## bandcamp-to-mp3.py
 
 快速下載 MP3，支援 **Bandcamp** 與 **YouTube 單曲**，自動嵌入封面與 ID3 metadata。
+- 只有直接貼上 Bandcamp 專輯連結（`https://藝人.bandcamp.com/album/專輯網址`）時，才會建立 `~/Music/YYYY-MM-DD/專輯名稱/`，將整張專輯的歌曲存入其中；資料夾使用網站提供的專輯名稱，無法用於檔名的字元會替換成底線。
+- 單曲（`/track/...`）即使屬於某張專輯，仍直接存到日期資料夾；藝術家頁面與 YouTube 單曲也維持原本的儲存方式。
 - Bandcamp 部分只下載平台允許播放的內容（免費下載 / 可串流預覽），不繞過付費機制
 - YouTube 不支援 playlist（要下整個 playlist 請用 `yt-to-mp3.py`）
 
@@ -364,7 +376,7 @@ alias bc='cd ~/Desktop/vscode/github/yt-spotify-tool && python3 bandcamp-to-mp3.
 之後輸入 `bc` 就直接進互動模式。
 
 **注意：**
-- 下載資料夾統一為當天日期 `YYYY-MM-DD`（所有下載 script 共用同一個，不每次開新資料夾）
+- 下載資料夾預設為 `~/Music/YYYY-MM-DD`（使用者家目錄下的 Music，Linux / macOS 通用）（所有下載 script 共用同一個，不每次開新資料夾）
 - 檔名格式：`歌名 - Artist.mp3`
 - 已存在的 MP3 自動跳過
 - YouTube 帶 `list=` 或 `/playlist` 的 URL 會被擋下，要求改用 `yt-to-mp3.py`
