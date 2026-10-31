@@ -3,7 +3,7 @@
 ## 快速查閱
 
 ``` bash
-python3 music.py                  # 統一入口：貼任意網址自動分流（Spotify/YouTube/Bandcamp，推薦）
+python3 music.py                  # 統一入口：貼網址自動分流（Spotify/YouTube/Bandcamp/SoundCloud/Instagram，推薦）
 python3 shazam_pipeline.py        # 長影片/混音 → Shazam 聲紋辨識 → Spotify（互動模式，直接貼網址）
 python3 bandcamp-to-mp3.py        # 貼網址下載 MP3（Bandcamp / YouTube 單曲，互動模式）
 python3 yt-to-spotify.py          # YouTube 自帶音樂卡片 → Spotify 播放清單
@@ -12,8 +12,21 @@ python3 yt-to-mp3.py scrape       # YouTube 爬歌名 → 下載 MP3
 python3 yt-to-mp3.py download     # YouTube 影片/Playlist → 下載 MP3
 ```
 
-最方便的是 **`music.py`**：貼任意網址，自動判斷該走哪支（Spotify / Bandcamp 直接分流，
+最方便的是 **`music.py`**：貼網址，自動判斷該走哪支（Spotify / Bandcamp / SoundCloud / Instagram 直接分流，
 YouTube 會問一句要下載還是辨識）。底層用 subprocess 呼叫既有 script，不動現有程式。
+
+### Instagram 影片／Reels → MP3
+
+執行 `make run`（或 `python3 music.py`），貼上 IG 影片／Reels 分享網址並按 Enter，
+就會直接下載成 MP3，不需要再選模式。也可以直接帶網址：
+
+```bash
+python3 music.py "https://www.instagram.com/reel/影片代碼/"
+```
+
+MP3 放在當天的 `./YYYY-MM-DD/` 資料夾，檔名包含標題與影片 ID，已存在的檔案不覆寫。
+需安裝 `ffmpeg`；音訊包含影片原有的人聲與背景音樂。若 IG 要求登入或限制存取，
+下載可能失敗，程式會顯示錯誤後回到貼網址的提示。
 
 `shazam_pipeline` / `bandcamp` / `yt-to-mp3` / `spotify-to-mp3` 也都能各自直接跑（不帶參數）進**互動模式**，
 跳提示貼網址，**不用引號、不用跳脫**。把網址當參數傳時，含 `&` 的網址記得用引號包住（見各節範例）。

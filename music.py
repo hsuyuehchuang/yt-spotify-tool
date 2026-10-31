@@ -14,13 +14,20 @@
 import os
 import subprocess
 import sys
+from urllib.parse import urlsplit
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def detect_platform(url: str) -> str | None:
-    """純判斷網址屬於哪個平台（spotify / bandcamp / youtube / None）。"""
+    """純判斷網址屬於哪個平台，無法辨識時回傳 None。"""
     u = url.lower()
+    try:
+        host = urlsplit(url).hostname or ""
+    except ValueError:
+        return None
+    if host == "instagram.com" or host.endswith(".instagram.com"):
+        return "instagram"
     if "spotify.com" in u:
         return "spotify"
     if "bandcamp.com" in u:
@@ -49,6 +56,8 @@ _YT_WANTS_NAME = {"2", "3"}   # 這兩個可帶 Spotify 清單名稱
 def build_command(url: str, yt_choice: str | None = None, playlist_name: str | None = None):
     """純函式：依平台 / YouTube 選項組出要執行的指令 list；無法判斷回 None。"""
     plat = detect_platform(url)
+    if plat == "instagram":
+        return [sys.executable, _script("instagram-to-mp3.py"), url]
     if plat == "spotify":
         return ["python3", _script("spotify-to-mp3.py"), url]
     if plat == "bandcamp":
@@ -84,7 +93,7 @@ def _ask_youtube(url: str):
 def run_one(url: str):
     plat = detect_platform(url)
     if plat is None:
-        print(f"[跳過] 認不出這是哪個平台（支援 Spotify / YouTube / Bandcamp / SoundCloud）: {url}")
+        print(f"[跳過] 認不出這是哪個平台（支援 Spotify / YouTube / Bandcamp / SoundCloud / Instagram）: {url}")
         return
     cmd = _ask_youtube(url) if plat == "youtube" else build_command(url)
     if not cmd:
@@ -100,7 +109,7 @@ def main():
             run_one(url)
         return
 
-    print("統一入口：貼上 Spotify / YouTube / Bandcamp / SoundCloud 網址（空白 Enter 或 Ctrl+C 結束）")
+    print("統一入口：貼上 Spotify / YouTube / Bandcamp / SoundCloud / Instagram 網址（空白 Enter 或 Ctrl+C 結束）")
     try:
         while True:
             url = input("\n>>> ").strip()
