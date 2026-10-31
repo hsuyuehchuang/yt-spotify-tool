@@ -2,6 +2,16 @@
 
 ## 快速查閱
 
+首次使用先完成下方「環境需求」的安裝。每次開新終端機，請在專案目錄啟用虛擬環境：
+
+```bash
+source .venv/bin/activate
+```
+
+也可以直接執行 `.venv/bin/python music.py`，不需先啟用環境；統一入口會沿用同一個 Python 執行各平台的子程式。
+
+所有平台下載的 MP3 預設儲存在 `~/Music/YYYY-MM-DD/`，依當天日期共用資料夾；Bandcamp 專輯連結會再建立專輯名稱子資料夾。目錄不存在時會自動建立，不受啟動位置影響。
+
 ``` bash
 python3 music.py                  # 統一入口：貼網址自動分流（Spotify/YouTube/Bandcamp/SoundCloud/Instagram，推薦）
 python3 shazam_pipeline.py        # 長影片/混音 → Shazam 聲紋辨識 → Spotify（互動模式，直接貼網址）
@@ -24,7 +34,7 @@ YouTube 會問一句要下載還是辨識）。底層用 subprocess 呼叫既有
 python3 music.py "https://www.instagram.com/reel/影片代碼/"
 ```
 
-MP3 放在當天的 `./YYYY-MM-DD/` 資料夾，檔名包含標題與影片 ID，已存在的檔案不覆寫。
+MP3 放在當天的 `~/Music/YYYY-MM-DD/` 資料夾，檔名包含標題與影片 ID，已存在的檔案不覆寫。
 需安裝 `ffmpeg`；音訊包含影片原有的人聲與背景音樂。若 IG 要求登入或限制存取，
 下載可能失敗，程式會顯示錯誤後回到貼網址的提示。
 
@@ -226,7 +236,7 @@ python spotify-to-mp3.py "https://open.spotify.com/playlist/2b1UMpzBx73UmYn4D8Xc
 ```
 === 讀取 Spotify 播放清單 ===
 播放清單: Weekender 2026
-下載資料夾: ./2026-05-08
+下載資料夾: ~/Music/2026-05-08
 共 21 首歌
 
 [1/21] Extra, Extra!! - Paula Perry
@@ -242,9 +252,21 @@ python spotify-to-mp3.py "https://open.spotify.com/playlist/2b1UMpzBx73UmYn4D8Xc
 
 **注意：**
 - 不帶參數 → 互動模式（貼一個下一個，免引號）
-- 下載資料夾統一為當天日期 `YYYY-MM-DD`（所有下載 script 共用同一個，不每次開新資料夾）；可用第二個參數指定別的資料夾
+- 下載資料夾預設為 `~/Music/YYYY-MM-DD`（使用者家目錄下的 Music，Linux / macOS 通用）（所有下載 script 共用同一個，不每次開新資料夾）；可用第二個參數指定別的資料夾
 - 檔名格式：`歌名 - Artist.mp3`
 - 搜尋優先 YouTube Music Topic 頻道，找不到才做一般搜尋，兩輪都要過 title + artist + 時長比對
+- 前兩輪未命中時，再用 `"完整歌名" "主要歌手"` 搜尋並套用相同文字／時長驗證，避免 `In The Sun / Low Heat` 等常見詞被拆成不相關的結果。這一步不需要封面。
+- 三輪文字配對皆未命中時，自動啟用封面補救（`music.py` 的 Spotify 分流也會使用）：
+  - 讀取 Spotify 專輯封面與 YouTube 候選縮圖，不需人工截圖、不需付費圖片 API。
+  - Spotify 圖片取自**清單中每首歌的 `track.album.images`**（單曲也是如此），絕不使用播放清單的封面。
+  - 再做一輪歌名優先搜尋，合併候選並去重；歌手仍須符合、時長差不超過 5 秒。
+  - 歌名允許小幅拼字差異（字元相似度至少 0.80）；remix/live 等版本標籤及曲名數字仍須一致。
+  - 縮圖以中央正方形及幾種裁切比例去除留邊，比對色彩與空間結構，分數至少 90/100 才接受。
+  - **90 分是圖片相似度指標，不是「90% 確定是同一首歌」**。同專輯可能共用封面，因此不會只憑圖片下載。
+  - 多個候選達標且前兩名差距小於 2 分會跳過；缺圖、圖片讀取失敗、低細節純色圖也不會強行配對。
+  - 這是保守的啟發式比對：大幅改圖、非置中的封面可能漏掉；同封面且歌名、時長都極近的不同歌曲仍可能誤判。
+  - 首次更新請執行 `.venv/bin/python -m pip install -r requirements.txt` 安裝 Pillow，再用 `.venv/bin/python music.py` 啟動。
+  - 終端會顯示各輪搜尋數量、候選被排除的原因、每個可讀縮圖的分數，以及成功配對的時長差。沒有合格候選會明確顯示「尚未比圖」，不再只顯示找不到歌曲。
 - 已存在的 MP3 自動跳過，重跑安全
 - 每首歌之間隨機等待 2–5 秒
 - 第一次執行會開瀏覽器要求 Spotify 登入授權（token 存在 `.cache`）
@@ -315,7 +337,7 @@ python yt-to-mp3.py download "https://www.youtube.com/watch?v=xxx&list=PLxxx"
 
 **輸出：**
 ```
-下載資料夾: ./2026-05-08
+下載資料夾: ~/Music/2026-05-08
 
 [1/20] 影片標題
   影片標題  87%
@@ -330,7 +352,7 @@ python yt-to-mp3.py download "https://www.youtube.com/watch?v=xxx&list=PLxxx"
 
 **注意（scrape / download 共用）：**
 - 不帶參數 → 互動模式（先選模式，再貼一個跑一個）
-- 下載資料夾統一為當天日期 `YYYY-MM-DD`（所有下載 script 共用同一個，不每次開新資料夾）
+- 下載資料夾預設為 `~/Music/YYYY-MM-DD`（使用者家目錄下的 Music，Linux / macOS 通用）（所有下載 script 共用同一個，不每次開新資料夾）
 - 已存在的 MP3 自動跳過，重跑安全
 - 封面（YouTube thumbnail）自動嵌入 MP3，並寫入 artist / album / title 等 metadata
 - 音質：`bestaudio/best` + MP3 VBR 最高品質
@@ -341,6 +363,8 @@ python yt-to-mp3.py download "https://www.youtube.com/watch?v=xxx&list=PLxxx"
 ## bandcamp-to-mp3.py
 
 快速下載 MP3，支援 **Bandcamp** 與 **YouTube 單曲**，自動嵌入封面與 ID3 metadata。
+- 只有直接貼上 Bandcamp 專輯連結（`https://藝人.bandcamp.com/album/專輯網址`）時，才會建立 `~/Music/YYYY-MM-DD/專輯名稱/`，將整張專輯的歌曲存入其中；資料夾使用網站提供的專輯名稱，無法用於檔名的字元會替換成底線。
+- 單曲（`/track/...`）即使屬於某張專輯，仍直接存到日期資料夾；藝術家頁面與 YouTube 單曲也維持原本的儲存方式。
 - Bandcamp 部分只下載平台允許播放的內容（免費下載 / 可串流預覽），不繞過付費機制
 - YouTube 不支援 playlist（要下整個 playlist 請用 `yt-to-mp3.py`）
 
@@ -377,7 +401,7 @@ alias bc='cd ~/Desktop/vscode/github/yt-spotify-tool && python3 bandcamp-to-mp3.
 之後輸入 `bc` 就直接進互動模式。
 
 **注意：**
-- 下載資料夾統一為當天日期 `YYYY-MM-DD`（所有下載 script 共用同一個，不每次開新資料夾）
+- 下載資料夾預設為 `~/Music/YYYY-MM-DD`（使用者家目錄下的 Music，Linux / macOS 通用）（所有下載 script 共用同一個，不每次開新資料夾）
 - 檔名格式：`歌名 - Artist.mp3`
 - 已存在的 MP3 自動跳過
 - YouTube 帶 `list=` 或 `/playlist` 的 URL 會被擋下，要求改用 `yt-to-mp3.py`

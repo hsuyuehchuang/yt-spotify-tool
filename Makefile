@@ -27,6 +27,7 @@ shazam:
 
 test:
 	$(PY) test_recognizer.py
+	$(PY) -m unittest -v test_cover_match test_music
 
 clean:
 	rm -rf $(VENV) __pycache__ .shazam-cache

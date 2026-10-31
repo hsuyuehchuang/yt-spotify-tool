@@ -2,7 +2,7 @@
 bandcamp-to-mp3.py
 
 快速下載 MP3，支援 Bandcamp 與 YouTube 單曲。
-- Bandcamp：單曲 / 專輯 / 藝術家頁面
+- Bandcamp：單曲 / 專輯 / 藝術家頁面；專輯連結會另建專輯名稱資料夾
 - YouTube：只支援單一影片，不支援 playlist（要下載 playlist 請用 yt-to-mp3.py）
 
 用法:
@@ -16,9 +16,9 @@ bandcamp-to-mp3.py
 
 import sys
 import os
-import glob
 import time
 import random
+from urllib.parse import unquote, urlsplit
 import yt_dlp
 
 from utils import make_output_dir
@@ -52,6 +52,21 @@ def download_one(url: str, output_dir: str):
     info_opts = {"quiet": True, "no_warnings": True, "ignoreerrors": True, "noplaylist": True}
     with yt_dlp.YoutubeDL(info_opts) as ydl:
         info = ydl.extract_info(url, download=False)
+
+    if not info:
+        print(f"  [失敗] 無法取得歌曲或專輯資訊: {url}")
+        return
+
+    parsed_url = urlsplit(url)
+    host = (parsed_url.hostname or "").lower()
+    parts = parsed_url.path.strip("/").split("/")
+    if (host == "bandcamp.com" or host.endswith(".bandcamp.com")) and len(parts) == 2 and parts[0] == "album":
+        album_title = info.get("album") or info.get("title") or unquote(parts[1])
+        folder_name = safe_filename(album_title)
+        folder_name = "".join(c if ord(c) >= 32 else "_" for c in folder_name).strip(" .") or "Untitled Album"
+        output_dir = os.path.join(output_dir, folder_name)
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"專輯資料夾: {output_dir}")
 
     # 父層的 artist（album / discography 共用）
     parent_artist = info.get("uploader") or info.get("artist") or info.get("channel") or ""
@@ -95,12 +110,12 @@ def download_one(url: str, output_dir: str):
 
         print(f"[{i}/{total}] {label}")
 
-        if glob.glob(mp3_path):
+        if os.path.isfile(mp3_path):
             print(f"  [已存在，跳過]")
             skipped.append(label)
             continue
 
-        ydl_opts["outtmpl"] = os.path.join(output_dir, fname + ".%(ext)s")
+        ydl_opts["outtmpl"] = os.path.join(output_dir, fname).replace("%", "%%") + ".%(ext)s"
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:

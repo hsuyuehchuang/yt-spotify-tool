@@ -6,6 +6,7 @@ yt-dlp>=2024.1.0
 spotipy>=2.23.0
 mutagen>=1.47.0
 requests>=2.31.0
+Pillow>=10.4.0      # Spotify 封面 / YouTube 縮圖比對
 
 # shazam_pipeline 新增
 shazamio>=0.7.0      # 需提供 Shazam().recognize(bytes) 介面

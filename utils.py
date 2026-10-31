@@ -1,15 +1,15 @@
 import datetime
-import os
 import re
+from pathlib import Path
 
 _QUALIFIERS = r'feat|ft|with|prod|remix|edit|mix|version|ver|instrumental|radio'
 
 
 def make_output_dir() -> str:
-    """所有下載統一放到「當天日期」資料夾 ./YYYY-MM-DD（不再每次開新資料夾）。"""
-    path = f"./{datetime.date.today().strftime('%Y-%m-%d')}"
-    os.makedirs(path, exist_ok=True)
-    return path
+    """所有下載統一放到 ~/Music/YYYY-MM-DD，不受啟動時的工作目錄影響。"""
+    path = Path.home() / "Music" / datetime.date.today().isoformat()
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
 _STOPWORDS = {"the", "a", "an", "and", "or", "of", "in", "on", "at", "to", "is", "it"}
 
 
